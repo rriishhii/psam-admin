@@ -326,8 +326,8 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 <script>
-  const SUPABASE_URL = "https://YOUR-PROJECT-REF.supabase.co";
-  const SUPABASE_ANON_KEY = "YOUR-ANON-PUBLIC-KEY";
+  const SUPABASE_URL = "https://bphuhyzqbzlqccsyvogu.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJwaHVoeXpxYnpscWNjc3l2b2d1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyMzkzNDUsImV4cCI6MjEwNTgxNTM0NX0.riffgOcolCg89NgqCHIbGya8IGlLOnizqvkG704UBjk";
   const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: { persistSession: false, autoRefreshToken: true, detectSessionInUrl: true, flowType: "implicit" }
   });
