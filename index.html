@@ -5891,20 +5891,31 @@ function addF4Row(containerId, group='', limit=0, rateBelow=1.0, rateAbove=1.0, 
 function getOccupancyGroupsFromUI(containerId) {
   const rows = $(containerId).children;
   const result = [];
-  for(let row of rows) {
-    const group = row.querySelector('.f4-group').value.trim();
+  
+  for (let row of rows) {
+    const groupNode = row.querySelector('.f4-group');
+    if (!groupNode) continue;
+    
+    const group = groupNode.value.trim();
     if (!group) continue;
+    
+    // Safely extract values without crashing if the input element is missing
+    const limit = parseFloat(row.querySelector('.f4-limit')?.value) || 0;
+    const rateBelow = parseFloat(row.querySelector('.f4-below')?.value) || 1.0;
+    const rateAbove = parseFloat(row.querySelector('.f4-above')?.value) || 1.0;
+    const rawOpts = row.querySelector('.f4-opts')?.value || "";
+
     result.push({
       group: group,
-      limit: parseFloat(row.querySelector('.f4-limit').value) || 0,
-      rateBelow: parseFloat(row.querySelector('.f4-below').value) || 1.0,
-      rateAbove: parseFloat(row.querySelector('.f4-above').value) || 1.0,
-      options: row.querySelector('.f4-opts').value.split(',').map(o => o.trim().toUpperCase()).filter(Boolean)
+      limit: limit,
+      rateBelow: rateBelow,
+      rateAbove: rateAbove,
+      options: rawOpts.split(',').map(o => o.trim().toUpperCase()).filter(Boolean)
     });
   }
-  return result.length ? result : [{ group: "DEFAULT", limit: 9999, rateBelow: 1.0, rateAbove: 1.0, options: ["N/A"] }];
+  
+  return result.length ? result : [{ group: "DEFAULT", limit: 0, rateBelow: 1.0, rateAbove: 1.0, options: ["N/A"] }];
 }
-
 function loadUlbConfig(ulbId) {
   const isNew = ulbId === "new";
   const cfg = isNew ? null : ULB_REGISTRY[ulbId];
@@ -5959,23 +5970,27 @@ async function saveUlbConfig() {
   try {
     const pending = await showPendingToast("Saving configuration to cloud...");
     
-    // Ensure this RPC exists in your Supabase instance to accept the JSON
-    if (typeof LocalDB.rpc === "function") {
-      await LocalDB.rpc("admin_save_ulb_config", { p_id: ulbId, p_config: newConfig });
-    }
+    // Use standard Supabase REST API instead of the RPC for better reliability
+    const { error } = await sb.from('ulb_configs').upsert({ 
+      id: ulbId, 
+      config: newConfig 
+    });
+    
+    if (error) throw error;
 
     ULB_REGISTRY[ulbId] = newConfig;
     showToast(`${ulbName} configuration saved.`, "success", 3000, pending);
 
     buildUlbMenu();
     
-    // FIX: Automatically load the form if this is the active ULB OR if the app is currently empty
+    // Force the app to load the new config if none is currently active
     if (currentUlbFile === ulbId || !currentUlbFile) {
       switchUlb(ulbId, !currentUlbFile);
     }
     
     closeUlbConfigModal();
   } catch (e) {
+    console.error("Save config error:", e);
     showToast("Failed to save configuration: " + e.message, "danger");
   }
 }
