@@ -1767,25 +1767,19 @@
     </div>
     <div class="modal-body-lg">
       <div class="filter-bar" style="margin-bottom: 20px;">
-        <select id="configUlbSelector" onchange="loadUlbConfig(this.value)" style="flex: 1 1 100%;">
+      <div class="filter-bar" style="margin-bottom: 20px; display: flex; gap: 10px;">
+        <select id="configUlbSelector" onchange="loadUlbConfig(this.value)" style="flex: 1 1 auto;">
           <option value="new">-- Create New ULB Configuration --</option>
         </select>
+        <button type="button" class="btn-proceed" style="width: auto; height: 38px; padding: 0 16px; flex: 0 0 auto;" onclick="document.getElementById('configUlbSelector').value='new'; loadUlbConfig('new');">
+          + Add New ULB
+        </button>
       </div>
 
       <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
         <div class="login-field" style="grid-column: span 2;">
           <label class="oc-field-label">ULB Name / Identifier</label>
           <input type="text" id="cfgUlbName" placeholder="e.g., MC Paonta Sahib" autocomplete="off">
-        </div>
-        
-        <div class="login-field">
-          <label class="oc-field-label">Rateable Rate (%)</label>
-          <input type="number" id="cfgRateableRate" placeholder="e.g., 10" step="0.01">
-        </div>
-        
-        <div class="login-field">
-          <label class="oc-field-label">Maintenance Rate (%)</label>
-          <input type="number" id="cfgMaintenanceRate" placeholder="e.g., 10" step="0.01">
         </div>
 
         <!-- F1: Zone Rates -->
@@ -5956,8 +5950,6 @@ function loadUlbConfig(ulbId) {
   const cfg = isNew ? null : ULB_REGISTRY[ulbId];
   
   $("cfgUlbName").value = isNew ? "" : cfg.ULB_NAME;
-  $("cfgRateableRate").value = cfg?.TAX_RATES?.rateable || "";
-  $("cfgMaintenanceRate").value = cfg?.TAX_RATES?.maintenance || "";
   
   // Clear existing rows
   ['cfgF1-container', 'cfgF2-container', 'cfgF3-container', 'cfgF4-container', 'cfgF5-container'].forEach(id => {
@@ -5997,10 +5989,6 @@ async function saveUlbConfig() {
   const newConfig = {
     id: ulbId,
     ULB_NAME: ulbName,
-    TAX_RATES: {
-      rateable: parseFloat($("cfgRateableRate").value) || 0,
-      maintenance: parseFloat($("cfgMaintenanceRate").value) || 0
-    },
     OPTIONS: {
       WARD: ULB_REGISTRY[ulbId]?.OPTIONS?.WARD || ["Ward 1"],
       ZONE: getFactorListFromUI('cfgF1-container'),
