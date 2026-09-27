@@ -1429,7 +1429,41 @@
   }
   #authGateModal .modal-card, #authPendingModal .modal-card { width: 100%; max-width: 380px; }
   #authGateModal .login-error { display: block; }
-
+  /* Tax Configuration Modal Responsive Adjustments */
+  .cfg-dynamic-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    align-items: center;
+  }
+  @media (max-width: 640px) {
+    #ulbConfigModal .grid {
+      grid-template-columns: 1fr !important;
+    }
+    #ulbConfigModal .login-field[style*="grid-column: span 2"] {
+      grid-column: span 1 !important;
+    }
+    .cfg-dynamic-row {
+      flex-wrap: wrap;
+      background: var(--surface-hover);
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+    .cfg-dynamic-row input {
+      flex: 1 1 100% !important;
+      width: 100% !important;
+      height: 38px !important;
+      margin-bottom: 4px;
+    }
+    .cfg-dynamic-row button {
+      flex: 1 1 100%;
+      height: 38px !important;
+      background: rgba(220, 38, 38, 0.1);
+      color: var(--danger);
+      border-radius: 6px;
+    }
+  }
   /* App content stays out of the page (not rendered at all) until the person is signed in AND
      has picked a ULB. body.app-ready is added by switchUlb(). */
   body:not(.app-ready) .wrap,
@@ -1786,6 +1820,14 @@
         <div class="login-field">
           <label class="oc-field-label">Maintenance Rate (%)</label>
           <input type="number" id="cfgMaintenanceRate" placeholder="e.g., 10" step="0.01">
+        </div>
+        
+        <!-- Wards Configuration -->
+        <div class="login-field" style="grid-column: span 2;">
+          <label class="oc-field-label">Wards</label>
+          <div class="report-panel-note" style="margin: 0 0 8px 0; font-size: 11px;">Fields: Ward Number/ID (e.g., Ward 1) | Optional Ward Name (e.g., North Zone)</div>
+          <div id="cfgWard-container"></div>
+          <button type="button" class="page-btn" onclick="addWardRow('cfgWard-container')" style="margin-top: 6px; padding: 4px 8px; font-size: 11px;">+ Add Ward</button>
         </div>
 
         <!-- F1: Zone Rates -->
@@ -5857,16 +5899,41 @@ function openUlbConfigModal() {
 function closeUlbConfigModal() {
   $("ulbConfigModal").style.display = "none";
 }
+
+function addWardRow(containerId, wardVal = '', wardName = '') {
+  const container = $(containerId);
+  const row = document.createElement('div');
+  row.className = 'cfg-dynamic-row';
+  row.innerHTML = `
+    <input type="text" placeholder="Ward No. (e.g., Ward 1)" value="${wardVal}" class="cfg-ward-val" style="flex:1; height:32px; font-size:12px;">
+    <input type="text" placeholder="Ward Name (Optional)" value="${wardName}" class="cfg-ward-name" style="flex:1; height:32px; font-size:12px;">
+    <button type="button" class="frow-remove-btn" onclick="this.parentElement.remove()" style="height:32px; min-width:32px;">&times;</button>
+  `;
+  container.appendChild(row);
+}
+
+function getWardListFromUI(containerId) {
+  const rows = $(containerId).children;
+  const result = [];
+  for (let row of rows) {
+    const val = row.querySelector('.cfg-ward-val').value.trim();
+    const name = row.querySelector('.cfg-ward-name').value.trim();
+    if (val) {
+      // Formats as "Ward 1 (North Zone)" so the app dropdown displays it nicely
+      result.push(name ? `${val} (${name})` : val);
+    }
+  }
+  return result.length ? result : ["Ward 1"];
+}
+
 function addFactorRow(containerId, name = '', rate = 1.0) {
   const container = $(containerId);
   const row = document.createElement('div');
-  row.style.display = 'flex';
-  row.style.gap = '8px';
-  row.style.marginBottom = '6px';
+  row.className = 'cfg-dynamic-row';
   row.innerHTML = `
-    <input type="text" placeholder="Option Name" value="${name}" class="config-opt-name" style="flex:2; height:28px; font-size:12px;">
-    <input type="number" step="0.01" placeholder="Rate" value="${rate}" class="config-opt-rate" style="flex:1; height:28px; font-size:12px;">
-    <button type="button" class="frow-remove-btn" onclick="this.parentElement.remove()" style="height:28px;">&times;</button>
+    <input type="text" placeholder="Option Name" value="${name}" class="config-opt-name" style="flex:2; height:32px; font-size:12px;">
+    <input type="number" step="0.01" placeholder="Rate" value="${rate}" class="config-opt-rate" style="flex:1; height:32px; font-size:12px;">
+    <button type="button" class="frow-remove-btn" onclick="this.parentElement.remove()" style="height:32px; min-width:32px;">&times;</button>
   `;
   container.appendChild(row);
 }
@@ -5874,16 +5941,14 @@ function addFactorRow(containerId, name = '', rate = 1.0) {
 function addF4Row(containerId, group='', limit=0, rateBelow=1.0, rateAbove=1.0, options='') {
   const container = $(containerId);
   const row = document.createElement('div');
-  row.style.display = 'flex';
-  row.style.gap = '6px';
-  row.style.marginBottom = '6px';
+  row.className = 'cfg-dynamic-row';
   row.innerHTML = `
-    <input type="text" placeholder="Group Name" value="${group}" class="f4-group" style="width:20%; height:28px; font-size:12px;">
-    <input type="number" placeholder="Max Area" value="${limit}" class="f4-limit" style="width:15%; height:28px; font-size:12px;">
-    <input type="number" step="0.01" placeholder="Rate <=" value="${rateBelow}" class="f4-below" style="width:15%; height:28px; font-size:12px;">
-    <input type="number" step="0.01" placeholder="Rate >" value="${rateAbove}" class="f4-above" style="width:15%; height:28px; font-size:12px;">
-    <input type="text" placeholder="Options (comma separated)" value="${options}" class="f4-opts" style="width:30%; height:28px; font-size:12px;">
-    <button type="button" class="frow-remove-btn" onclick="this.parentElement.remove()" style="height:28px;">&times;</button>
+    <input type="text" placeholder="Group" value="${group}" class="f4-group" style="width:16%; height:32px; font-size:12px;">
+    <input type="number" placeholder="Max Area" value="${limit}" class="f4-limit" style="width:15%; height:32px; font-size:12px;">
+    <input type="number" step="0.01" placeholder="Rate <=" value="${rateBelow}" class="f4-below" style="width:14%; height:32px; font-size:12px;">
+    <input type="number" step="0.01" placeholder="Rate >" value="${rateAbove}" class="f4-above" style="width:14%; height:32px; font-size:12px;">
+    <input type="text" placeholder="Options (comma separated)" value="${options}" class="f4-opts" style="flex:1; height:32px; font-size:12px;">
+    <button type="button" class="frow-remove-btn" onclick="this.parentElement.remove()" style="height:32px; min-width:32px;">&times;</button>
   `;
   container.appendChild(row);
 }
@@ -5902,18 +5967,27 @@ function getFactorListFromUI(containerId) {
 function getOccupancyGroupsFromUI(containerId) {
   const rows = $(containerId).children;
   const result = [];
-  for(let row of rows) {
-    const group = row.querySelector('.f4-group').value.trim().toUpperCase();
+  for (let row of rows) {
+    const groupNode = row.querySelector('.f4-group');
+    if (!groupNode) continue;
+    
+    const group = groupNode.value.trim();
     if (!group) continue;
+    
+    const limit = parseFloat(row.querySelector('.f4-limit')?.value) || 0;
+    const rateBelow = parseFloat(row.querySelector('.f4-below')?.value) || 1.0;
+    const rateAbove = parseFloat(row.querySelector('.f4-above')?.value) || 1.0;
+    const rawOpts = row.querySelector('.f4-opts')?.value || "";
+
     result.push({
       group: group,
-      limit: parseFloat(row.querySelector('.f4-limit').value) || 0,
-      rateBelow: parseFloat(row.querySelector('.f4-below').value) || 1.0,
-      rateAbove: parseFloat(row.querySelector('.f4-above').value) || 1.0,
-      options: row.querySelector('.f4-opts').value.split(',').map(o => o.trim().toUpperCase()).filter(Boolean)
+      limit: limit,
+      rateBelow: rateBelow,
+      rateAbove: rateAbove,
+      options: rawOpts.split(',').map(o => o.trim().toUpperCase()).filter(Boolean)
     });
   }
-  return result.length ? result : [{ group: "DEFAULT", limit: 9999, rateBelow: 1.0, rateAbove: 1.0, options: ["N/A"] }];
+  return result.length ? result : [{ group: "DEFAULT", limit: 0, rateBelow: 1.0, rateAbove: 1.0, options: ["N/A"] }];
 }
 
 function loadUlbConfig(ulbId) {
@@ -5924,11 +5998,21 @@ function loadUlbConfig(ulbId) {
   $("cfgRateableRate").value = cfg?.TAX_RATES?.rateable || "";
   $("cfgMaintenanceRate").value = cfg?.TAX_RATES?.maintenance || "";
   
-  ['cfgF1-container', 'cfgF2-container', 'cfgF3-container', 'cfgF4-container', 'cfgF5-container'].forEach(id => {
+  ['cfgWard-container', 'cfgF1-container', 'cfgF2-container', 'cfgF3-container', 'cfgF4-container', 'cfgF5-container'].forEach(id => {
     $(id).innerHTML = '';
   });
 
   if (!isNew && cfg) {
+    // Parse the ward data to extract optional names
+    (cfg.OPTIONS?.WARD || []).forEach(w => {
+      let val = w, name = '';
+      if (typeof w === 'string') {
+        const match = w.match(/^(.*?)\s*\((.*?)\)$/);
+        if (match) { val = match[1]; name = match[2]; }
+      }
+      addWardRow('cfgWard-container', val, name);
+    });
+
     (cfg.OPTIONS?.ZONE || []).forEach(opt => addFactorRow('cfgF1-container', opt.name, opt.rate));
     (cfg.OPTIONS?.BUILD || []).forEach(opt => addFactorRow('cfgF2-container', opt.name, opt.rate));
     (cfg.OPTIONS?.YEAR || []).forEach(opt => addFactorRow('cfgF3-container', opt.name, opt.rate));
@@ -5938,7 +6022,7 @@ function loadUlbConfig(ulbId) {
     if (occData.length > 0 && occData[0].group) {
       occData.forEach(g => addF4Row('cfgF4-container', g.group, g.limit, g.rateBelow, g.rateAbove, (g.options || []).join(', ')));
     } else if (occData.length > 0) {
-      addF4Row('cfgF4-container', 'Legacy', 9999, 1.0, 1.0, occData.join(', '));
+      addF4Row('cfgF4-container', 'Legacy', 0, 1.0, 1.0, occData.join(', '));
     }
   }
 }
@@ -5958,7 +6042,7 @@ async function saveUlbConfig() {
       maintenance: parseFloat($("cfgMaintenanceRate").value) || 0
     },
     OPTIONS: {
-      WARD: ULB_REGISTRY[ulbId]?.OPTIONS?.WARD || ["Ward 1"],
+      WARD: getWardListFromUI('cfgWard-container'),
       ZONE: getFactorListFromUI('cfgF1-container'),
       BUILD: getFactorListFromUI('cfgF2-container'),
       YEAR: getFactorListFromUI('cfgF3-container'),
@@ -5982,7 +6066,6 @@ async function saveUlbConfig() {
 
     buildUlbMenu();
     
-    // Automatically switch to the newly created ULB if the app is currently blank
     if (currentUlbFile === ulbId || !currentUlbFile) {
       switchUlb(ulbId, !currentUlbFile);
     }
