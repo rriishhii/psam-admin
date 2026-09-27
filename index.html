@@ -1817,12 +1817,12 @@
         </div>
 
         <!-- F4: Occupancy Area Groups -->
-        <div class="login-field" style="grid-column: span 2;">
-          <label class="oc-field-label">F4: Occupancy Area Groups</label>
-          <div class="report-panel-note" style="margin: 0 0 8px 0; font-size: 11px;">Fields: Group Name | Max Area | Rate &lt;= Max | Rate &gt; Max | Comma-Separated Options</div>
-          <div id="cfgF4-container"></div>
-          <button type="button" class="page-btn" onclick="addF4Row('cfgF4-container')" style="margin-top: 6px; padding: 4px 8px; font-size: 11px;">+ Add Occupancy Group</button>
-        </div>
+<div class="login-field" style="grid-column: span 2;">
+  <label class="oc-field-label">F4: Occupancy Area Groups</label>
+  <div class="report-panel-note" style="margin: 0 0 8px 0; font-size: 11px;">Fields: Group Name (e.g., a, b, A, B) | Rate | Comma-Separated Options</div>
+  <div id="cfgF4-container"></div>
+  <button type="button" class="page-btn" onclick="addF4Row('cfgF4-container')" style="margin-top: 6px; padding: 4px 8px; font-size: 11px;">+ Add Occupancy Group</button>
+</div>
       </div>
     </div>
     <div class="modal-footer-lg">
@@ -2382,60 +2382,51 @@ const DB = {
    ULB CONFIGURATION REGISTRY
 ========================================================================== */
 const ULB_REGISTRY = {
-  "mcpaonta": {
-    id: "mcpaonta",
-    ULB_NAME: "MC Paonta Sahib",
-    OPTIONS: {
-      WARD: ["Ward 1", "Ward 2", "Ward 3", "Ward 4", "Ward 5", "Ward 6", "Ward 7", "Ward 8", "Ward 9", "Ward 10", "Ward 11", "Ward 12", "Ward 13"],
-      ZONE: ["N/A", "A", "B"],
-      BUILD: ["N/A", "PUCCA", "KUCHA", "SEMI-PUCCA"],
-      YEAR: ["N/A", "BEFORE 1970", "ABOVE 1971 TO 1980", "ABOVE 1981 TO 2002", "ABOVE 2003 TO 2021", "2021 & BEYOND"],
-      OCCUPANCY: [
-        "N/A", "SELF RESIDENTIAL", "LETOUT RESIDENTIAL", "UNDER CONSTRUCTION", "CATTLE SHED", "HOTELS",
-        "SHOWROOMS", "RESTAURANT", "BARS", "BANKS", "ATMS", "CALL CENTRE", "MARRIAGE HALL", "TRAVEL AGENCY",
-        "MOBILE TOWER", "COACHING", "SHOPS", "SCHOOL", "COLLEGES", "EDUCATIONAL INSTITUTIONS", "OFFICES",
-        "HOSTEL", "HOSPITAL", "THEATRE", "CLUBS", "PAYING GUEST HOUSE", "GUEST HOUSE", "GODOWNS", "STORE",
-        "DHABAS", "STALL", "OTHERS", "PUBLIC WORSHIP", "BURIAL & CREMATION"
-      ]
+let ULB_REGISTRY = {};
+
+async function initUlbRegistry() {
+  try {
+    const { data, error } = await sb.from("ulb_configs").select("id, config");
+    if (error) throw error;
+
+    if (data && data.length > 0) {
+      data.forEach(row => {
+        ULB_REGISTRY[row.id] = row.config;
+      });
+    } else {
+      const defaultId = "mcpaonta";
+      const defaultConfig = {
+        id: defaultId,
+        ULB_NAME: "MC Paonta Sahib",
+        TAX_RATES: { rateable: 10, maintenance: 10 },
+        OPTIONS: {
+          WARD: ["Ward 1", "Ward 2", "Ward 3", "Ward 4", "Ward 5", "Ward 6", "Ward 7", "Ward 8", "Ward 9", "Ward 10", "Ward 11", "Ward 12", "Ward 13"],
+          ZONE: [{ name: "N/A", rate: 1.0 }, { name: "A", rate: 1.2 }, { name: "B", rate: 1.0 }],
+          BUILD: [{ name: "PUCCA", rate: 1.0 }, { name: "SEMI-PUCCA", rate: 0.8 }, { name: "KUCHA", rate: 0.5 }],
+          YEAR: [{ name: "BEFORE 1970", rate: 0.6 }, { name: "ABOVE 1971 TO 1980", rate: 0.7 }, { name: "ABOVE 1981 TO 2002", rate: 0.8 }, { name: "ABOVE 2003 TO 2021", rate: 0.9 }, { name: "2021 & BEYOND", rate: 1.0 }],
+          OCCUPANCY: [
+            { group: "a", limit: 0, rateBelow: 3.0, rateAbove: 3.0, options: ["SELF RESIDENTIAL"] },
+            { group: "b", limit: 0, rateBelow: 6.0, rateAbove: 6.0, options: ["LETOUT RESIDENTIAL"] },
+            { group: "A", limit: 0, rateBelow: 10.0, rateAbove: 10.0, options: ["HOTELS ABOVE 300 SQ MTR", "MNC", "SHOW ROOMS ABOVE 300 SQ MTR", "RESTAURANT ABOVE 300 SQ MTR"] },
+            { group: "B", limit: 0, rateBelow: 8.0, rateAbove: 8.0, options: ["HOTELS 100 TO 300 SQ MTR", "SHOW ROOMS 100 TO 300 SQ MTR"] },
+            { group: "C", limit: 0, rateBelow: 5.0, rateAbove: 5.0, options: ["OTHER HOTELS", "BARS", "OTHER RESTAURANTS", "BANKS", "ATMS", "OTHER SHOW ROOMS", "CALL CENTRE", "MARRIAGE HALL", "TRAVEL AGENCY", "MOBILE TOWERS", "COACHING"] },
+            { group: "D", limit: 0, rateBelow: 4.0, rateAbove: 4.0, options: ["SHOPS", "SCHOOL", "COLLEGES", "EDUCATIONAL INSTITUTIONS", "OFFICES", "HOSTEL", "HOSPITAL", "THEATRE", "CLUBS", "PAYING GUEST HOUSE (PGS)", "GUEST HOUSE"] },
+            { group: "E", limit: 0, rateBelow: 3.0, rateAbove: 3.0, options: ["GODOWNS", "DHABAS", "STALL", "OTHER PROPERTIES NOT COVERED UNDER (A TO D)"] }
+          ],
+          USE: [{ name: "N/A", rate: 1.0 }]
+        }
+      };
+
+      if (typeof LocalDB.rpc === "function") {
+        await LocalDB.rpc("admin_save_ulb_config", { p_id: defaultId, p_config: defaultConfig });
+      }
+      ULB_REGISTRY[defaultId] = defaultConfig;
     }
-  },
-
-  "mcnahan": {
-    id: "mcnahan",
-    ULB_NAME: "MC Nahan",
-    OPTIONS: {
-      WARD: ["Ward 1", "Ward 2", "Ward 3", "Ward 4", "Ward 5", "Ward 6", "Ward 7", "Ward 8", "Ward 9", "Ward 10", "Ward 11", "Ward 12", "Ward 13"],
-      ZONE: ["N/A"],
-      BUILD: ["N/A", "PUCCA", "KUCHA", "SEMI-PUCCA"],
-      YEAR: ["N/A"],
-      OCCUPANCY: [
-        "N/A", "SELF RESIDENTIAL", "LETOUT RESIDENTIAL", "UNDER CONSTRUCTION", "CATTLE SHED", "HOTELS",
-        "SHOWROOMS", "RESTAURANT", "BARS", "BANKS", "ATMS", "CALL CENTRE", "MARRIAGE HALL", "TRAVEL AGENCY",
-        "MOBILE TOWER", "COACHING", "SHOPS", "SCHOOL", "COLLEGES", "EDUCATIONAL INSTITUTIONS", "OFFICES",
-        "HOSTEL", "HOSPITAL", "THEATRE", "CLUBS", "PAYING GUEST HOUSE", "GUEST HOUSE", "GODOWNS", "STORE",
-        "DHABAS", "STALL", "OTHERS", "PUBLIC WORSHIP", "BURIAL & CREMATION"
-      ]
-    },
-  },
-
-  "npbhota": {
-    id: "npbhota",
-    ULB_NAME: "NP Bhota",
-    OPTIONS: {
-      WARD: ["Ward 1", "Ward 2", "Ward 3", "Ward 4", "Ward 5", "Ward 6", "Ward 7"],
-      ZONE: ["N/A"],
-      BUILD: ["N/A", "PUCCA", "KUCHA", "SEMI-PUCCA"],
-      YEAR: ["N/A"],
-      OCCUPANCY: [
-        "N/A", "SELF RESIDENTIAL", "LETOUT RESIDENTIAL", "UNDER CONSTRUCTION", "CATTLE SHED", "HOTELS",
-        "SHOWROOMS", "RESTAURANT", "BARS", "BANKS", "ATMS", "CALL CENTRE", "MARRIAGE HALL", "TRAVEL AGENCY",
-        "MOBILE TOWER", "COACHING", "SHOPS", "SCHOOL", "COLLEGES", "EDUCATIONAL INSTITUTIONS", "OFFICES",
-        "HOSTEL", "HOSPITAL", "THEATRE", "CLUBS", "PAYING GUEST HOUSE", "GUEST HOUSE", "GODOWNS", "STORE",
-        "DHABAS", "STALL", "OTHERS", "PUBLIC WORSHIP", "BURIAL & CREMATION"
-      ]
-    },
-  },
-};
+  } catch (e) {
+    console.error("Failed to load ULB configurations:", e);
+    showToast("Could not load ULB configurations from cloud.", "danger");
+  }
+}
 
 /* --------------------------------------------------------------------------
    CORE APP UTILS & CONFIGURATION
@@ -5950,6 +5941,7 @@ function getOccupancyGroupsFromUI(containerId) {
     });
   }
   return result;
+
 function addFactorRow(containerId, name = '', rate = 1.0) {
   const container = $(containerId);
   const row = document.createElement('div');
@@ -5964,18 +5956,16 @@ function addFactorRow(containerId, name = '', rate = 1.0) {
   container.appendChild(row);
 }
 
-function addF4Row(containerId, group='', limit=0, rateBelow=1.0, rateAbove=1.0, options='') {
+function addF4Row(containerId, group = '', rate = 1.0, options = '') {
   const container = $(containerId);
   const row = document.createElement('div');
   row.style.display = 'flex';
   row.style.gap = '6px';
   row.style.marginBottom = '6px';
   row.innerHTML = `
-    <input type="text" placeholder="Group Name" value="${group}" class="f4-group" style="width:20%; height:28px; font-size:12px;">
-    <input type="number" placeholder="Max Area" value="${limit}" class="f4-limit" style="width:15%; height:28px; font-size:12px;">
-    <input type="number" step="0.01" placeholder="Rate <=" value="${rateBelow}" class="f4-below" style="width:15%; height:28px; font-size:12px;">
-    <input type="number" step="0.01" placeholder="Rate >" value="${rateAbove}" class="f4-above" style="width:15%; height:28px; font-size:12px;">
-    <input type="text" placeholder="Options (comma separated)" value="${options}" class="f4-opts" style="width:30%; height:28px; font-size:12px;">
+    <input type="text" placeholder="Group (a, A...)" value="${group}" class="f4-group" style="width:18%; height:28px; font-size:12px;">
+    <input type="number" step="0.01" placeholder="Rate" value="${rate}" class="f4-rate" style="width:16%; height:28px; font-size:12px;">
+    <input type="text" placeholder="Options (comma separated)" value="${options}" class="f4-opts" style="flex:1; height:28px; font-size:12px;">
     <button type="button" class="frow-remove-btn" onclick="this.parentElement.remove()" style="height:28px;">&times;</button>
   `;
   container.appendChild(row);
@@ -5984,46 +5974,46 @@ function addF4Row(containerId, group='', limit=0, rateBelow=1.0, rateAbove=1.0, 
 function getFactorListFromUI(containerId) {
   const rows = $(containerId).children;
   const result = [];
-  for(let row of rows) {
-     const name = row.querySelector('.config-opt-name').value.trim().toUpperCase();
-     const rate = parseFloat(row.querySelector('.config-opt-rate').value) || 1.0;
-     if(name) result.push({ name, rate });
+  for (let row of rows) {
+    const name = row.querySelector('.config-opt-name').value.trim().toUpperCase();
+    const rate = parseFloat(row.querySelector('.config-opt-rate').value) || 1.0;
+    if (name) result.push({ name, rate });
   }
-  return result.length ? result : [{name: "N/A", rate: 1.0}];
+  return result.length ? result : [{ name: "N/A", rate: 1.0 }];
 }
 
 function getOccupancyGroupsFromUI(containerId) {
   const rows = $(containerId).children;
   const result = [];
-  for(let row of rows) {
-    const group = row.querySelector('.f4-group').value.trim().toUpperCase();
+  for (let row of rows) {
+    const group = row.querySelector('.f4-group').value.trim();
     if (!group) continue;
+    const rate = parseFloat(row.querySelector('.f4-rate').value) || 1.0;
+    const rawOpts = row.querySelector('.f4-opts').value;
+
     result.push({
       group: group,
-      limit: parseFloat(row.querySelector('.f4-limit').value) || 0,
-      rateBelow: parseFloat(row.querySelector('.f4-below').value) || 1.0,
-      rateAbove: parseFloat(row.querySelector('.f4-above').value) || 1.0,
-      options: row.querySelector('.f4-opts').value.split(',').map(o => o.trim().toUpperCase()).filter(Boolean)
+      limit: 0,
+      rateBelow: rate,
+      rateAbove: rate,
+      options: rawOpts.split(',').map(o => o.trim().toUpperCase()).filter(Boolean)
     });
   }
-  return result.length ? result : [{ group: "DEFAULT", limit: 9999, rateBelow: 1.0, rateAbove: 1.0, options: ["N/A"] }];
-         }
+  return result.length ? result : [{ group: "DEFAULT", limit: 0, rateBelow: 1.0, rateAbove: 1.0, options: ["N/A"] }];
 }
 
 function loadUlbConfig(ulbId) {
   const isNew = ulbId === "new";
   const cfg = isNew ? null : ULB_REGISTRY[ulbId];
-  
+
   $("cfgUlbName").value = isNew ? "" : cfg.ULB_NAME;
   $("cfgRateableRate").value = cfg?.TAX_RATES?.rateable || "";
   $("cfgMaintenanceRate").value = cfg?.TAX_RATES?.maintenance || "";
-  
-  // Clear all existing rows to create a blank slate
+
   ['cfgF1-container', 'cfgF2-container', 'cfgF3-container', 'cfgF4-container', 'cfgF5-container'].forEach(id => {
     $(id).innerHTML = '';
   });
 
-  // Only populate rows if editing an EXISTING configuration
   if (!isNew && cfg) {
     (cfg.OPTIONS?.ZONE || []).forEach(opt => addFactorRow('cfgF1-container', opt.name, opt.rate));
     (cfg.OPTIONS?.BUILD || []).forEach(opt => addFactorRow('cfgF2-container', opt.name, opt.rate));
@@ -6032,10 +6022,9 @@ function loadUlbConfig(ulbId) {
 
     const occData = cfg.OPTIONS?.OCCUPANCY || [];
     if (occData.length > 0 && occData[0].group) {
-      occData.forEach(g => addF4Row('cfgF4-container', g.group, g.limit, g.rateBelow, g.rateAbove, (g.options || []).join(', ')));
+      occData.forEach(g => addF4Row('cfgF4-container', g.group, g.rateBelow ?? g.rate, (g.options || []).join(', ')));
     } else if (occData.length > 0) {
-      // Legacy fallback mapping
-      addF4Row('cfgF4-container', 'Legacy', 9999, 1.0, 1.0, occData.join(', '));
+      addF4Row('cfgF4-container', 'Legacy', 1.0, occData.join(', '));
     }
   }
 }
@@ -6093,9 +6082,12 @@ Theme.apply();
 async function bootApp() {
   if (_appBooted) return;
   _appBooted = true;
-  // Only the ULB prompt is built here. Everything that touches app content or saved records
-  // (record count, storage check, form, sidebar) waits until a ULB has been chosen in switchUlb().
+
   Draft.init();
+
+  // Load cloud configurations before building dropdown menus
+  await initUlbRegistry();
+
   buildUlbMenu();
   updateAuthUI();
   startIdleWatch();
