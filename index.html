@@ -1760,9 +1760,9 @@
 </div>
 <!-- ULB & Tax Configuration Modal (Admin Only) -->
 <div id="ulbConfigModal" class="modal-overlay-lg" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="ulbConfigTitle">
-  <div class="modal-card-lg" style="max-width: 760px;">
+  <div class="modal-card-lg" style="max-width: 850px;">
     <div class="modal-header-lg">
-      <h3 id="ulbConfigTitle">Configure ULB & Tax Rates</h3>
+      <h3 id="ulbConfigTitle">Configure ULB & Factor Rates</h3>
       <button type="button" class="modal-close-btn" onclick="closeUlbConfigModal()" aria-label="Close dialog">&times;</button>
     </div>
     <div class="modal-body-lg">
@@ -1789,28 +1789,29 @@
         </div>
 
         <div class="login-field">
-          <label class="oc-field-label">F1: Zone (Comma separated)</label>
-          <textarea id="cfgF1" rows="3" placeholder="A, B, C, N/A"></textarea>
+          <label class="oc-field-label">F1: Zone Rates (Format: Option = Rate)</label>
+          <textarea id="cfgF1" rows="3" placeholder="A = 1.5, B = 1.0, C = 0.8, N/A = 1.0"></textarea>
         </div>
 
         <div class="login-field">
-          <label class="oc-field-label">F2: Building Type (Comma separated)</label>
-          <textarea id="cfgF2" rows="3" placeholder="PUCCA, KUCHA, SEMI-PUCCA, N/A"></textarea>
+          <label class="oc-field-label">F2: Building Type Rates (Format: Option = Rate)</label>
+          <textarea id="cfgF2" rows="3" placeholder="PUCCA = 1.0, KUCHA = 0.5, N/A = 1.0"></textarea>
         </div>
 
         <div class="login-field">
-          <label class="oc-field-label">F3: Age Factor / Year (Comma separated)</label>
-          <textarea id="cfgF3" rows="3" placeholder="BEFORE 1970, 1971-1980..."></textarea>
+          <label class="oc-field-label">F3: Age Factor Rates (Format: Option = Rate)</label>
+          <textarea id="cfgF3" rows="3" placeholder="BEFORE 1970 = 0.5, 1971-1980 = 0.7"></textarea>
         </div>
 
         <div class="login-field">
-          <label class="oc-field-label">F4: Occupancy (Comma separated)</label>
-          <textarea id="cfgF4" rows="3" placeholder="SELF RESIDENTIAL, LETOUT..."></textarea>
+          <label class="oc-field-label">F5: Building Use Rates (Format: Option = Rate)</label>
+          <textarea id="cfgF5" rows="3" placeholder="HOTELS = 2.0, SHOPS = 1.5, N/A = 1.0"></textarea>
         </div>
 
         <div class="login-field" style="grid-column: span 2;">
-          <label class="oc-field-label">F5: Building Use (Comma separated)</label>
-          <textarea id="cfgF5" rows="3" placeholder="HOTELS, SHOPS, OFFICES..."></textarea>
+          <label class="oc-field-label">F4: Occupancy Area Groups (1 group per line)</label>
+          <div class="report-panel-note" style="margin: 0 0 4px 0; font-size: 11px;">Format: Group Name | Max Area | Rate &lt;= Max | Rate &gt; Max | Option 1, Option 2</div>
+          <textarea id="cfgF4" rows="4" placeholder="Residential | 50 | 1.0 | 1.5 | SELF RESIDENTIAL, LETOUT&#10;Commercial | 100 | 2.0 | 3.0 | SHOPS, HOTELS"></textarea>
         </div>
       </div>
     </div>
@@ -2708,15 +2709,26 @@ let WARD = [], ZONE = [], BUILD = [], YEAR = [], OCCUPANCY = [];
 let TOP_FIELDS = [], FLOOR_FIELDS = [], FLOOR_COLS = [];
 
 function refreshOptionsFromEngine() {
+  // Extracts the option name whether it's an old string array or a new object array
+  const extractNames = (arr) => (arr || []).map(f => typeof f === 'object' ? f.name : f).filter(Boolean);
+
   WARD = window.UlbConfig?.OPTIONS?.WARD || [];
-  ZONE = window.UlbConfig?.OPTIONS?.ZONE || ["N/A"];
-  BUILD = window.UlbConfig?.OPTIONS?.BUILD || ["N/A"];
-  YEAR = window.UlbConfig?.OPTIONS?.YEAR || ["N/A"];
-  OCCUPANCY = window.UlbConfig?.OPTIONS?.OCCUPANCY || ["N/A"];
-  
-  // Note: F5 (Building Use) is saved in the ULB_REGISTRY from the config modal 
-  // so your calculation engine can reference it, but we do not add it to FLOOR_FIELDS.
-  let USE = window.UlbConfig?.OPTIONS?.USE || ["N/A"];
+  ZONE = extractNames(window.UlbConfig?.OPTIONS?.ZONE) || ["N/A"];
+  BUILD = extractNames(window.UlbConfig?.OPTIONS?.BUILD) || ["N/A"];
+  YEAR = extractNames(window.UlbConfig?.OPTIONS?.YEAR) || ["N/A"];
+
+  // F4 Options: Flatten all options out of their Area Groups for the UI dropdown
+  let occGroups = window.UlbConfig?.OPTIONS?.OCCUPANCY || [];
+  if (occGroups.length > 0 && occGroups[0].options) {
+    OCCUPANCY = occGroups.flatMap(g => g.options);
+  } else if (occGroups.length > 0) {
+    OCCUPANCY = occGroups; // Fallback for old plain arrays
+  } else {
+    OCCUPANCY = ["N/A"];
+  }
+
+  // F5 is saved in config for external calculators, but omitted from FLOOR_FIELDS below
+  let USE = extractNames(window.UlbConfig?.OPTIONS?.USE) || ["N/A"];
 
   TOP_FIELDS = [
     ["ward", { label: "Ward", required: true, spanClass: "col-third", options: WARD, helper: "Select ward number" }],
@@ -2739,6 +2751,7 @@ function refreshOptionsFromEngine() {
     ["area", "Area (Sq. Mtr.)", null],
     ["remarks", "Remarks", null]
   ];
+  
   FLOOR_COLS = FLOOR_FIELDS.map(f => f[1]);
 }
 
@@ -5871,6 +5884,10 @@ function closeUlbConfigModal() {
   $("ulbConfigModal").style.display = "none";
 }
 
+// Helper to convert structured objects back to text for the config UI
+const formatFactorList = (arr) => (arr || []).map(f => f.name ? `${f.name} = ${f.rate}` : `${f} = 1.0`).join(', ');
+const formatOccGroups = (arr) => (arr || []).map(g => g.group ? `${g.group} | ${g.limit} | ${g.rateBelow} | ${g.rateAbove} | ${(g.options || []).join(', ')}` : "").filter(Boolean).join('\n');
+
 function loadUlbConfig(ulbId) {
   const isNew = ulbId === "new";
   const cfg = isNew ? null : ULB_REGISTRY[ulbId];
@@ -5879,22 +5896,50 @@ function loadUlbConfig(ulbId) {
   $("cfgRateableRate").value = cfg?.TAX_RATES?.rateable || "";
   $("cfgMaintenanceRate").value = cfg?.TAX_RATES?.maintenance || "";
   
-  $("cfgF1").value = isNew ? "N/A" : (cfg.OPTIONS.ZONE || []).join(", ");
-  $("cfgF2").value = isNew ? "N/A" : (cfg.OPTIONS.BUILD || []).join(", ");
-  $("cfgF3").value = isNew ? "N/A" : (cfg.OPTIONS.YEAR || []).join(", ");
-  $("cfgF4").value = isNew ? "N/A" : (cfg.OPTIONS.OCCUPANCY || []).join(", ");
-  $("cfgF5").value = isNew ? "N/A" : (cfg.OPTIONS.USE || []).join(", ");
+  $("cfgF1").value = isNew ? "N/A = 1.0" : formatFactorList(cfg.OPTIONS.ZONE);
+  $("cfgF2").value = isNew ? "N/A = 1.0" : formatFactorList(cfg.OPTIONS.BUILD);
+  $("cfgF3").value = isNew ? "N/A = 1.0" : formatFactorList(cfg.OPTIONS.YEAR);
+  $("cfgF5").value = isNew ? "N/A = 1.0" : formatFactorList(cfg.OPTIONS.USE);
+  
+  // Handle fallback if old plain array data exists
+  const occData = cfg?.OPTIONS?.OCCUPANCY || [];
+  $("cfgF4").value = isNew ? "" : (occData[0]?.group ? formatOccGroups(occData) : `Legacy | 9999 | 1.0 | 1.0 | ${occData.join(', ')}`);
 }
 
-function saveUlbConfig() {
+// Helpers to parse text into structured JSON arrays
+function parseFactorList(str) {
+  if (!str.trim()) return [{ name: "N/A", rate: 1.0 }];
+  return str.split(/[\n,]+/).map(s => {
+    let parts = s.split('=');
+    let name = parts[0] ? parts[0].trim().toUpperCase() : "";
+    let rate = parts.length > 1 ? parseFloat(parts[1]) || 1.0 : 1.0;
+    return name ? { name, rate } : null;
+  }).filter(Boolean);
+}
+
+function parseOccupancyGroups(str) {
+  if (!str.trim()) return [];
+  return str.split('\n').map(line => {
+    let parts = line.split('|');
+    if (parts.length < 5) return null;
+    return {
+      group: parts[0].trim().toUpperCase(),
+      limit: parseFloat(parts[1]) || 0,
+      rateBelow: parseFloat(parts[2]) || 1.0,
+      rateAbove: parseFloat(parts[3]) || 1.0,
+      options: parts[4].split(',').map(o => o.trim().toUpperCase()).filter(Boolean)
+    };
+  }).filter(Boolean);
+}
+
+async function saveUlbConfig() {
   const ulbName = $("cfgUlbName").value.trim();
   if (!ulbName) return showToast("ULB Name is required.", "warning");
   
   const selector = $("configUlbSelector");
   const ulbId = selector.value === "new" ? ulbName.toLowerCase().replace(/[^a-z0-9]/g, "") : selector.value;
-  const parseList = (str) => str.split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
   
-  ULB_REGISTRY[ulbId] = {
+  const newConfig = {
     id: ulbId,
     ULB_NAME: ulbName,
     TAX_RATES: {
@@ -5903,25 +5948,36 @@ function saveUlbConfig() {
     },
     OPTIONS: {
       WARD: ULB_REGISTRY[ulbId]?.OPTIONS?.WARD || ["Ward 1"],
-      ZONE: parseList($("cfgF1").value) || ["N/A"],
-      BUILD: parseList($("cfgF2").value) || ["N/A"],
-      YEAR: parseList($("cfgF3").value) || ["N/A"],
-      OCCUPANCY: parseList($("cfgF4").value) || ["N/A"],
-      USE: parseList($("cfgF5").value) || ["N/A"]
+      ZONE: parseFactorList($("cfgF1").value),
+      BUILD: parseFactorList($("cfgF2").value),
+      YEAR: parseFactorList($("cfgF3").value),
+      OCCUPANCY: parseOccupancyGroups($("cfgF4").value),
+      USE: parseFactorList($("cfgF5").value)
     }
   };
-  
-  showToast(`${ulbName} configuration saved.`, "success");
-  
-  buildUlbMenu();
-  if (currentUlbFile === ulbId) {
-    refreshOptionsFromEngine();
-    buildTopGrid();
-    buildFloorGrid();
+
+  try {
+    const pending = await showPendingToast("Saving configuration to cloud...");
+    
+    // Send to Supabase (Requires the SQL function added previously)
+    if (typeof LocalDB.rpc === "function") {
+      await LocalDB.rpc("admin_save_ulb_config", { p_id: ulbId, p_config: newConfig });
+    }
+    
+    ULB_REGISTRY[ulbId] = newConfig;
+    showToast(`${ulbName} configuration saved.`, "success", 3000, pending);
+    
+    buildUlbMenu();
+    if (currentUlbFile === ulbId) {
+      refreshOptionsFromEngine();
+      buildTopGrid();
+      buildFloorGrid();
+    }
+    closeUlbConfigModal();
+  } catch (e) {
+    showToast("Failed to save configuration: " + e.message, "danger");
   }
-  
-  closeUlbConfigModal();
-         }
+       }
 /* Application Boot
    Theme is applied immediately so the sign-in gate itself isn't a flash of
    the wrong color scheme. Everything else waits for bootApp(), which the
