@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://*.supabase.co; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta name="referrer" content="no-referrer">
+<title>PSAM - Property Survey & Assessment Manager</title>
+
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/libphonenumber-js@1/bundle/libphonenumber-mobile.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+  :root {
+    --bg: #f1f5f9; --surface: #ffffff; --surface-card: #f8fafc; --surface-hover: #e2e8f0; --surface-input: #ffffff;
+    --border: #cbd5e1; --border-strong: #94a3b8; --text-primary: #0f172a; --text-secondary: #64748b;
+    --accent: #0284c7; --accent-hover: #0369a1; --accent-glow: rgba(2, 132, 199, 0.18);
+    --success: #059669; --warning: #d97706; --danger: #dc2626; --purple: #7c3aed; --teal: #0d9488; --slate: #475569;
+    --shadow-sm: 0 1px 3px rgba(15,23,42,0.08); --shadow-md: 0 4px 14px rgba(15,23,42,0.10); --shadow-lg: 0 16px 32px rgba(15,23,42,0.16);
+    --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark; --bg: #0b1220; --surface: #111a2b; --surface-card: #0f1727; --surface-hover: #1b2942; --surface-input: #0c1524;
+    --border: #263650; --border-strong: #3d4f6d; --text-primary: #e6edf7; --text-secondary: #9aa8bd;
+    --accent: #0b8bd0; --accent-hover: #0a78b3; --accent-glow: rgba(56, 189, 248, 0.18);
+  }
+  :root[data-theme="dark"] .chip-success, :root[data-theme="dark"] .status-added { color: #34d399; }
+  :root[data-theme="dark"] .chip-warning, :root[data-theme="dark"] .status-updated, :root[data-theme="dark"] .edit-status.dirty { color: #fbbf24; }
+  :root[data-theme="dark"] .chip-danger, :root[data-theme="dark"] .status-stale { color: #f87171; }
+  
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 6px 12px; background: radial-gradient(circle at top right, var(--surface), var(--bg) 80%); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 13.5px; color: var(--text-primary); min-height: 100vh; width: 100%; }
+
+  body:not(.app-ready) .wrap, body:not(.app-ready) #sidebarDrawer, body:not(.app-ready) #sidebarOverlay { display: none !important; }
+
+  #preloadView { position: fixed; inset: 0; z-index: 20010; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: radial-gradient(circle at top right, var(--surface), var(--bg) 80%); }
+  #preloadView.hide { opacity: 0; pointer-events: none; transition: opacity .35s var(--ease); }
+  .pl-spinner { width: 36px; height: 36px; border-radius: 50%; border: 3px solid var(--border); border-top-color: var(--accent); animation: pl-spin 0.8s linear infinite; }
+  @keyframes pl-spin { to { transform: rotate(360deg); } }
+
+  #authGateModal, #authPendingModal { position: fixed; inset: 0; z-index: 20000; background: radial-gradient(circle at top right, var(--surface), var(--bg) 80%); display: none; align-items: center; justify-content: center; padding: 16px; }
+  
+  .sidebar-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.5); backdrop-filter: blur(3px); z-index: 10001; opacity: 0; pointer-events: none; transition: opacity 0.25s var(--ease); }
+  .sidebar-overlay.active { opacity: 1; pointer-events: auto; }
+  .sidebar-drawer { position: fixed; top: 0; left: 0; bottom: 0; width: 290px; max-width: 85vw; background: var(--surface); border-right: 1px solid var(--border); box-shadow: 8px 0 24px rgba(15, 23, 42, 0.16); z-index: 10002; transform: translateX(-100%); transition: transform 0.28s var(--ease); display: flex; flex-direction: column; }
+  .sidebar-drawer.open { transform: translateX(0); }
+  .sidebar-header { padding: 16px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; background: var(--surface-card); }
+  .sidebar-header h4 { margin: 0; font-size: 15px; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 8px; }
+  .sidebar-body { flex: 1; overflow-y: auto; padding: 12px 10px; display: flex; flex-direction: column; gap: 16px; }
+  .sidebar-section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); padding: 4px 10px; margin: 0; }
+  .sidebar-nav-list { display: flex; flex-direction: column; gap: 4px; }
+  .sidebar-btn { width: 100%; display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: transparent; border: none; border-radius: 8px; color: var(--text-primary); font-size: 13px; font-weight: 600; cursor: pointer; text-align: left; transition: all 0.15s var(--ease); font-family: inherit; }
+  .sidebar-btn:hover:not(:disabled) { background: var(--surface-hover); color: var(--accent); }
+  .sidebar-btn svg { width: 18px; height: 18px; fill: currentColor; flex-shrink: 0; }
+  .sidebar-auth-card { background: var(--surface-card); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin: 4px 6px; display: flex; flex-direction: column; gap: 8px; }
+  .menu-toggle-btn { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface); color: var(--text-primary); cursor: pointer; }
+  .menu-toggle-btn svg { width: 18px; height: 18px; fill: currentColor; }
+
+  #toast-container { position: fixed; top: 16px; left: 0; right: 0; margin: 0 auto; z-index: 10010; display: flex; flex-direction: column; gap: 8px; pointer-events: none; width: 90%; max-width: 440px; }
+  .toast { pointer-events: auto; display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 8px; color: #ffffff; font-size: 13px; font-weight: 600; box-shadow: var(--shadow-lg); opacity: 0; transform: translateY(-12px) scale(0.96); transition: all 0.15s var(--ease); }
+  .toast.show { opacity: 1; transform: translateY(0) scale(1); }
+  .toast-close { flex-shrink: 0; width: 28px; height: 28px; background: transparent; border: none; color: inherit; font-size: 20px; cursor: pointer; }
+  .toast-success { background: var(--success); } .toast-danger { background: var(--danger); } .toast-info { background: var(--accent); } .toast-warning { background: var(--warning); }
+
+  .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.65); backdrop-filter: blur(6px); z-index: 9999; display: flex; align-items: flex-start; justify-content: center; overflow-y: auto; padding: 16px; }
+  .modal-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; width: 100%; max-width: 420px; margin: auto; padding: 28px 24px; text-align: center; }
+  .modal-icon-badge { width: 48px; height: 48px; background: var(--accent-glow); color: var(--accent); border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 16px; }
+  .modal-icon-badge svg { width: 24px; height: 24px; fill: currentColor; }
+  .modal-card h3 { margin: 0 0 6px 0; font-size: 19px; }
+  .modal-card p { color: var(--text-secondary); font-size: 13.5px; margin: 0 0 20px 0; }
+  
+  .btn-proceed { width: 100%; height: 42px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: var(--accent); color: #ffffff; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: all 0.15s var(--ease); }
+  .btn-proceed:hover:not(:disabled) { background: var(--accent-hover); transform: translateY(-1px); }
+  .btn-proceed:disabled, .btn-proceed.is-disabled { opacity: 0.65; cursor: not-allowed; }
+  .btn-proceed svg { width: 16px; height: 16px; fill: currentColor; }
+
+  .title-bar { display: flex; justify-content: space-between; align-items: center; background: linear-gradient(135deg, var(--surface) 0%, var(--bg) 100%); border: 1px solid var(--border); border-bottom: 2px solid var(--accent); border-radius: 10px 10px 0 0; padding: 8px 14px; box-shadow: var(--shadow-sm); flex-wrap: wrap; gap: 8px; }
+  .title-text { font-size: 18px; font-weight: 700; letter-spacing: 0.8px; }
+  .engine-select-wrap select { height: 32px; font-size: 13px; border: 1.5px solid var(--accent); font-weight: 600; color: var(--accent); border-radius: 6px; padding-left: 8px; }
+  .panel { border: 1px solid var(--border); border-top: none; border-radius: 0 0 10px 10px; padding: 12px 16px; margin-bottom: 10px; background: var(--surface); box-shadow: var(--shadow-md); }
+  .grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px 12px; }
+  .field { display: flex; flex-direction: column; }
+  .col-third { grid-column: span 2; } .col-half { grid-column: span 3; } .col-two-thirds { grid-column: span 4; }
+  .field label { font-weight: 600; font-size: 11.5px; margin-bottom: 3px; color: var(--text-secondary); text-transform: uppercase; }
+  .req-star { color: var(--danger); font-weight: bold; margin-left: 2px; }
+  input, select, textarea { width: 100%; height: 32px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-input); color: var(--text-primary); font-family: inherit; font-size: 13px; padding: 5px 10px; outline: none; transition: border-color .15s var(--ease); }
+  input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+  
+  .gis-row { display: flex; position: relative; align-items: center; width: 100%; }
+  .gis-row input { padding-right: 152px; }
+  .gis-controls { position: absolute; right: 4px; top: 4px; bottom: 4px; display: flex; align-items: center; gap: 3px; z-index: 2; }
+  .gis-controls button { border: none; border-radius: 4px; background: var(--surface-hover); color: var(--text-primary); cursor: pointer; display: flex; align-items: center; justify-content: center; height: 100%; padding: 0 8px; font-weight: 700; font-size: 11.5px; }
+  .gis-view-btn { background: var(--accent) !important; color: #ffffff !important; }
+
+  .floor-wrap { border: 1px solid var(--border); border-radius: 8px; margin-top: 10px; width: 100%; overflow-x: auto; background: var(--surface); box-shadow: var(--shadow-md); }
+  .floor-grid { display: grid; width: 100%; }
+  .fth { background: var(--surface-card); font-weight: 700; font-size: 12px; text-transform: uppercase; text-align: center; padding: 7px 6px; border-bottom: 2px solid var(--border-strong); border-right: 1px solid var(--border); display: flex; align-items: center; justify-content: center; }
+  .frow-label { background: var(--surface-card); font-weight: 600; color: var(--accent); display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-right: 1px solid var(--border); border-top: 1px solid var(--border); }
+  .frow-remove-btn { background: var(--surface); border: 1px solid var(--border); color: var(--danger); width: 22px; height: 22px; border-radius: 7px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+  .ftd { padding: 4px 8px; border-right: 1px solid var(--border); border-top: 1px solid var(--border); display: flex; align-items: center; gap: 4px; }
+  .ftd input, .ftd select { height: 28px; }
+  .ftd-tax { font-weight: 700; color: var(--accent); background: rgba(2, 132, 199, 0.06); font-family: monospace; }
+  .floor-level-actions { display: flex; justify-content: flex-end; padding: 10px 12px; background: var(--surface-card); border-top: 1px solid var(--border); }
+
+  .tax-summary-bar { margin-top: 8px; padding: 8px 14px; background: var(--surface-card); border: 1px solid var(--border-strong); border-radius: 8px; display: flex; justify-content: space-between; align-items: center; }
+  .tax-summary-bar strong { font-size: 16px; color: var(--accent); font-family: monospace; }
+
+  .edit-status { display: none; width: fit-content; margin: 10px auto 0; padding: 5px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 600; border: 1px solid transparent; }
+  .edit-status.clean { background: var(--surface-hover); color: var(--text-secondary); border-color: var(--border); }
+  .edit-status.dirty { background: rgba(217,119,6,0.14); color: var(--warning); border-color: rgba(217,119,6,0.45); }
+  .field-changed { border-color: var(--warning) !important; background-color: rgba(217,119,6,0.08) !important; }
+
+  .btns { margin-top: 10px; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+  .btns button { padding: 8px 18px; border: 1px solid transparent; border-radius: 6px; font-weight: 600; cursor: pointer; color: #fff; }
+  .save { background: var(--success); } .update { background: var(--warning); } .del { background: var(--danger); } .reset { background: var(--slate); } .invoice { background: var(--teal); } .history { background: var(--purple); } .ownercopy { background: var(--accent); }
+
+  .modal-overlay-lg { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.65); backdrop-filter: blur(6px); z-index: 9999; display: none; align-items: flex-start; justify-content: center; padding: 24px 16px; overflow-y: auto; }
+  .modal-card-lg { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; width: 100%; max-width: 1060px; display: flex; flex-direction: column; }
+  .modal-header-lg { display: flex; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+  .modal-body-lg { padding: 16px 20px; overflow-y: auto; }
+  .modal-footer-lg { display: flex; justify-content: space-between; padding: 14px 20px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+  .data-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .data-table th, .data-table td { padding: 9px 12px; border-bottom: 1px solid var(--border); text-align: left; }
+  .data-table th { background: var(--surface-card); font-weight: 700; color: var(--text-secondary); }
+  .page-btn { padding: 7px 14px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface); color: var(--text-primary); cursor: pointer; font-weight: 600; }
+  .tabs-bar { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+  .tab-btn { background: none; border: none; padding: 9px 14px; font-weight: 700; color: var(--text-secondary); cursor: pointer; border-bottom: 2.5px solid transparent; }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .report-panel { display: none; } .report-panel.active { display: block; }
+  .backup-banner { display: none; align-items: center; gap: 10px; margin-bottom: 10px; padding: 9px 12px; border: 1px solid rgba(217,119,6,0.45); background: rgba(217,119,6,0.10); border-radius: 9px; font-weight: 600; color: var(--warning); }
+  
+  .user-card-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px; }
+</style>
+</head>
+<body>
+
+<div id="toast-container" role="status" aria-live="polite"></div>
+
+<!-- Initial Preload Screen -->
+<div id="preloadView">
+  <div class="pl-spinner" aria-hidden="true"></div>
+  <p style="font-size:16px; font-weight:700; margin:0;">PSAM</p>
+  <p id="preloadStatus" style="font-size:12.5px; color:var(--text-secondary); margin:0;">Connecting to Supabase...</p>
+</div>
+
+<!-- Sign In Gate (Zero Browser Storage Mode) -->
+<div id="authGateModal" role="dialog" aria-modal="true">
+  <div class="modal-card">
+    <div class="modal-icon-badge">
+      <svg viewBox="0 0 24 24"><path d="M12 1a5 5 0 00-5 5v3H6a2 2 0 00-2 2v9a2 2 0 002 2h12a2 2 0 002-2v-9a2 2 0 00-2-2h-1V6a5 5 0 00-5-5zm-3 8V6a3 3 0 016 0v3H9zm3 4a2 2 0 012 2c0 .74-.4 1.38-1 1.73V18a1 1 0 11-2 0v-1.27a2 2 0 011-3.73z"/></svg>
+    </div>
+    <h3>Sign In to PSAM</h3>
+    <p>Enter your staff credentials. Storage operates directly against the Supabase cloud database with no local device caching.</p>
+    <div style="margin-bottom:12px;"><input type="email" id="authGateEmail" placeholder="Email Address"></div>
+    <div style="margin-bottom:12px;"><input type="password" id="authGatePassword" placeholder="Password"></div>
+    <p id="authGateError" style="color:var(--danger); display:none; margin:0 0 10px 0; font-weight:600;"></p>
+    <button type="button" class="btn-proceed" onclick="submitAuthGate()">Sign In</button>
+  </div>
+</div>
+
+<!-- Approval Pending Modal -->
+<div id="authPendingModal" role="dialog" aria-modal="true">
+  <div class="modal-card">
+    <h3>Approval Required</h3>
+    <p>Account (<strong id="authPendingEmail"></strong>) is pending administrator approval before database access is permitted.</p>
+    <button type="button" class="btn-proceed" onclick="recheckApproval()">Check Approval Status</button>
+    <button type="button" class="page-btn" style="margin-top:10px; width:100%;" onclick="sb.auth.signOut()">Sign Out</button>
+  </div>
+</div>
+
+<!-- Sidebar Drawer -->
+<div id="sidebarOverlay" class="sidebar-overlay" onclick="toggleSidebar(false)"></div>
+<aside id="sidebarDrawer" class="sidebar-drawer">
+  <div class="sidebar-header">
+    <h4>PSAM Menu</h4>
+    <button type="button" class="page-btn" onclick="toggleSidebar(false)">&times;</button>
+  </div>
+  <div class="sidebar-body">
+    <div class="sidebar-auth-card">
+      <span class="sidebar-section-title" style="padding:0;">Account</span>
+      <div id="sidebarLoggedInLabel" style="font-size:12px; font-weight:700; color:var(--success);">Signed in</div>
+      <button type="button" class="sidebar-btn admin-only-nav" onclick="toggleSidebar(false); openManageUsersModal();">👥 Manage Users</button>
+      <button type="button" class="sidebar-btn" onclick="toggleSidebar(false); sb.auth.signOut();" style="color:var(--danger);">Sign Out</button>
+    </div>
+
+    <div class="sidebar-nav-list admin-only-nav">
+      <p class="sidebar-section-title">Admin Management</p>
+      <button type="button" class="sidebar-btn" onclick="toggleSidebar(false); openRecordsModal();">Browse Records</button>
+      <button type="button" class="sidebar-btn" onclick="toggleSidebar(false); openReportsModal();">Ward &amp; Occupancy Reports</button>
+      <button type="button" class="sidebar-btn" onclick="toggleSidebar(false); openDemandNoticesModal();">Bulk Demand Notices</button>
+      <button type="button" class="sidebar-btn" onclick="toggleSidebar(false); openAllHistoryModal();">Global Change History</button>
+    </div>
+
+    <div class="sidebar-nav-list">
+      <p class="sidebar-section-title">Cloud Database</p>
+      <button type="button" class="sidebar-btn admin-only-nav" onclick="toggleSidebar(false); exportDatabase();">Export Database (JSON)</button>
+      <button type="button" class="sidebar-btn admin-only-nav" onclick="toggleSidebar(false); $('importDatabaseFile').click();">Import Database (JSON)</button>
+      <button type="button" class="sidebar-btn admin-only-nav" onclick="toggleSidebar(false); openBinModal();">Recycle Bin</button>
+      <button type="button" class="sidebar-btn admin-only-nav" onclick="toggleSidebar(false); clearAllData();" style="color:var(--danger);">Clear All Records</button>
+    </div>
+
+    <div class="sidebar-nav-list">
+      <p class="sidebar-section-title">Appearance &amp; Info</p>
+      <button type="button" class="sidebar-btn" id="themeBtn" onclick="Theme.cycle()">Theme: Automatic</button>
+      <button type="button" class="sidebar-btn" onclick="toggleSidebar(false); openAboutModal();">About PSAM</button>
+    </div>
+  </div>
+</aside>
+
+<!-- Manage Users Modal (Admin Only) -->
+<div id="manageUsersModal" class="modal-overlay" style="display:none;">
+  <div class="modal-card" style="max-width:500px; text-align:left;">
+    <h3 style="text-align:center;">Manage User Access</h3>
+    <p style="text-align:center;">Approve staff registrations and assign Admin / Field Staff roles in Supabase.</p>
+    <div id="manageUsersList" style="max-height:50vh; overflow-y:auto;">Loading users...</div>
+    <button type="button" class="page-btn" style="width:100%; margin-top:12px;" onclick="closeManageUsersModal()">Close</button>
+  </div>
+</div>
+
+<!-- ULB Selection Modal -->
+<div id="ulbPromptModal" class="modal-overlay" style="display:none;">
+  <div class="modal-card">
+    <div class="modal-icon-badge"><svg viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/></svg></div>
+    <h3>Select Urban Local Body</h3>
+    <p>Choose the target ULB municipality to load corresponding tax engine rules.</p>
+    <div style="margin-bottom:20px;">
+      <select id="modalUlbSelect" onchange="$('confirmUlbBtn').disabled = !this.value"></select>
+    </div>
+    <button type="button" class="btn-proceed" id="confirmUlbBtn" disabled onclick="confirmModalUlbSelection()">Proceed to Application</button>
+  </div>
+</div>
+
+<!-- Core PSAM Application Container -->
+<div class="wrap" id="appWrap">
+<form id="form">
+  <div class="title-bar">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <button type="button" class="menu-toggle-btn" onclick="toggleSidebar(true)"><svg viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg></button>
+      <span class="title-text" id="appHeaderTitle">PSAM Property Tax Manager</span>
+    </div>
+    <div class="engine-select-wrap">
+      <select id="ulbSelect" onchange="switchTaxEngine(this.value)"><option value="">Select ULB...</option></select>
+    </div>
+  </div>
+
+  <div id="draftBanner" class="backup-banner">
+    <span id="draftBannerText" style="flex:1;">Unsaved draft found in Supabase cloud storage.</span>
+    <button type="button" class="page-btn" onclick="Draft.restore()">Restore Draft</button>
+    <button type="button" class="page-btn" onclick="Draft.discard()">Discard</button>
+  </div>
+
+  <div class="panel"><div class="grid" id="topGrid"></div></div>
+
+  <div class="floor-wrap">
+    <div class="floor-grid" id="floorGrid"></div>
+    <div class="floor-level-actions" id="floorLevelActions"></div>
+  </div>
+
+  <div class="tax-summary-bar">
+    <span>Total Estimated Annual Tax:</span>
+    <strong id="totalTaxDisplay">₹0.00</strong>
+  </div>
+
+  <div class="edit-status clean" id="editStatus"></div>
+
+  <div class="btns">
+    <button type="button" class="save" id="saveBtn" onclick="persist('save')">Save Record</button>
+    <button type="button" class="update" id="updateBtn" style="display:none;" onclick="persist('update')">Update Record</button>
+    <button type="button" class="del" id="deleteBtn" style="display:none;" onclick="deleteRecord()">Delete Record</button>
+    <button type="button" class="invoice" id="invoiceBtn" style="display:none;" onclick="downloadInvoice()">Download Invoice</button>
+    <button type="button" class="ownercopy" id="ownerCopyBtn" style="display:none;" onclick="openOwnerCopyModal()">Copy Owner Details</button>
+    <button type="button" class="history" id="historyBtn" style="display:none;" onclick="openHistoryModal()">View History</button>
+    <button type="button" class="reset" onclick="handleResetClick()">Reset Form</button>
+    <input type="file" id="importDatabaseFile" accept=".json" style="display:none;" onchange="handleImportDatabaseFile(event)">
+  </div>
+  <div id="recordCount" style="text-align:center; margin-top:8px; font-weight:600; color:var(--text-secondary);"></div>
+</form>
+</div>
+
+<!-- Modals for Records, Reports, History, Bin, etc. -->
+<div id="recordsModal" class="modal-overlay-lg"><div class="modal-card-lg"><div class="modal-header-lg"><h3>Browse Records</h3><button type="button" class="page-btn" onclick="closeRecordsModal()">&times;</button></div><div class="modal-body-lg"><div class="table-wrap"><table class="data-table"><thead><tr><th>Ward</th><th>GIS ID</th><th>Owner</th><th>Mobile</th><th>Est. Tax</th></tr></thead><tbody id="browseTableBody"></tbody></table></div></div><div class="modal-footer-lg"><button type="button" class="page-btn" onclick="closeRecordsModal()">Close</button></div></div></div>
+<div id="reportsModal" class="modal-overlay-lg"><div class="modal-card-lg"><div class="modal-header-lg"><h3>Reports</h3><button type="button" class="page-btn" onclick="$('reportsModal').style.display='none'">&times;</button></div><div class="modal-body-lg"><table class="data-table"><thead><tr><th>Ward</th><th>Record Count</th><th>Est. Annual Demand</th></tr></thead><tbody id="wardSummaryBody"></tbody></table></div><div class="modal-footer-lg"><button type="button" class="page-btn" onclick="$('reportsModal').style.display='none'">Close</button></div></div></div>
+<div id="demandNoticesModal" class="modal-overlay-lg"><div class="modal-card-lg" style="max-width:500px;"><div class="modal-header-lg"><h3>Ward Demand Notices</h3><button type="button" class="page-btn" onclick="$('demandNoticesModal').style.display='none'">&times;</button></div><div class="modal-body-lg"><p>Generate unified demand notices for all properties with non-zero tax in the selected ward.</p><select id="reportWardSelect" style="width:100%; height:36px;"></select></div><div class="modal-footer-lg"><button type="button" class="btn-proceed" style="width:auto; padding:0 20px;" onclick="generateWardDemandNotices()">Download PDF Notices</button></div></div></div>
+<div id="historyModal" class="modal-overlay-lg"><div class="modal-card-lg"><div class="modal-header-lg"><h3 id="historyTitle">Change History</h3><button type="button" class="page-btn" onclick="$('historyModal').style.display='none'">&times;</button></div><div class="modal-body-lg" id="historyBody"></div><div class="modal-footer-lg"><button type="button" class="page-btn" onclick="$('historyModal').style.display='none'">Close</button></div></div></div>
+<div id="allHistoryModal" class="modal-overlay-lg"><div class="modal-card-lg"><div class="modal-header-lg"><h3>Global Change Audit</h3><button type="button" class="page-btn" onclick="$('allHistoryModal').style.display='none'">&times;</button></div><div class="modal-body-lg"><table class="data-table"><thead><tr><th>When</th><th>Property</th><th>Updated By</th><th>Tax Shift</th></tr></thead><tbody id="allHistBody"></tbody></table></div><div class="modal-footer-lg"><button type="button" class="page-btn" onclick="$('allHistoryModal').style.display='none'">Close</button></div></div></div>
+<div id="binModal" class="modal-overlay-lg"><div class="modal-card-lg" style="max-width:650px;"><div class="modal-header-lg"><h3>Recycle Bin (Cloud)</h3><button type="button" class="page-btn" onclick="$('binModal').style.display='none'">&times;</button></div><div class="modal-body-lg" id="binList"></div><div class="modal-footer-lg"><button type="button" class="page-btn" onclick="emptyRecycleBin()">Empty Bin</button><button type="button" class="page-btn" onclick="$('binModal').style.display='none'">Close</button></div></div></div>
+<div id="ownerCopyModal" class="modal-overlay-lg"><div class="modal-card-lg"><div class="modal-header-lg"><h3>Copy Owner Details</h3><button type="button" class="page-btn" onclick="$('ownerCopyModal').style.display='none'">&times;</button></div><div class="modal-body-lg"><div id="ownerCopyFields"></div><table class="data-table"><thead><tr><th></th><th>Ward</th><th>GIS ID</th><th>Current Owner</th></tr></thead><tbody id="ownerCopyRows"></tbody></table></div><div class="modal-footer-lg"><button type="button" class="btn-proceed" style="width:auto; padding:0 20px;" onclick="applyOwnerCopy()">Apply to Selected</button></div></div></div>
+<div id="aboutModal" class="modal-overlay"><div class="modal-card"><h3>About PSAM</h3><p>Property Survey &amp; Assessment Manager configured with pure cloud-native Supabase storage (no browser-level persistence). Estimates are for assessment purposes.</p><button type="button" class="page-btn" onclick="$('aboutModal').style.display='none'">Close</button></div></div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+/* ==========================================================================
+   SUPABASE CONNECTION (In-Memory Auth & Direct Cloud Operations)
+========================================================================== */
+const SUPABASE_URL = "https://cxnpdegwcsfwgqlxeoyj.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN4bnBkZWd3Y3Nmd2dxbHhlb3lqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA1MDY3NDYsImV4cCI6MjEwNjA4Mjc0Nn0.Uc-ifVtQWdYXmUxq7wlxJfaCs4Nk7Qy-MV65jkbbbhY";
+
+// In-memory authentication: zero storage in localStorage or IndexedDB
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { persistSession: false, autoRefreshToken: true, detectSessionInUrl: true }
+});
+
+let currentUserProfile = null;
+let _appBooted = false;
+
+function isSignedIn() { return !!currentUserProfile; }
+function isAdminLoggedIn() { return !!currentUserProfile && currentUserProfile.active === true && currentUserProfile.role === "admin"; }
+function currentUserLabel() { return !currentUserProfile ? "User" : (currentUserProfile.role === "admin" ? "Admin" : "Field Staff"); }
+
+/* ==========================================================================
+   SUPABASE DATABASE ENGINE (Pure Cloud CRUD, No Local Storage)
+========================================================================== */
+const DB = {
+  _cache: null,
+  
+  _recordId(r) {
+    const ulb = r.ulb_file || currentUlbFile;
+    return `${ulb}~${norm(r.ward)}~${norm(r.gis_id)}`.replace(/[\s\/]+/g, "_");
+  },
+
+  async getAll(ulbFile = currentUlbFile) {
+    if (this._cache) return this._cache.slice();
+    try {
+      let query = sb.from("records").select("record").order("updated_at", { ascending: false });
+      if (!isAdminLoggedIn() && ulbFile) query = query.eq("ulb_file", ulbFile);
+      const { data, error } = await query;
+      if (error) throw error;
+      this._cache = (data || []).map(row => row.record);
+      return this._cache.slice();
+    } catch (e) {
+      console.error("Supabase load error:", e);
+      showToast("Cloud DB read error: " + e.message, "danger");
+      return [];
+    }
+  },
+
+  async fetchOne(ward, gis, ulbFile = currentUlbFile) {
+    try {
+      const id = `${ulbFile}~${norm(ward)}~${norm(gis)}`.replace(/[\s\/]+/g, "_");
+      const { data, error } = await sb.from("records").select("record").eq("id", id).maybeSingle();
+      if (error) throw error;
+      if (data && data.record) {
+        if (!this._cache) this._cache = [];
+        const idx = this._cache.findIndex(r => norm(r.ward) === norm(ward) && norm(r.gis_id) === norm(gis) && (r.ulb_file || currentUlbFile) === ulbFile);
+        if (idx > -1) this._cache[idx] = data.record;
+        else this._cache.push(data.record);
+        return 1;
+      }
+      return 0;
+    } catch (e) {
+      console.error("Fetch single record error:", e);
+      return 0;
+    }
+  },
+
+  async saveAll(records) {
+    try {
+      const rows = records.map(r => ({
+        id: this._recordId(r),
+        ulb_file: r.ulb_file || currentUlbFile,
+        ward: normalizeWard(r.ward),
+        gis_id: String(r.gis_id).trim(),
+        owner_name: r.owner_name || "",
+        mobile_no: r.mobile_no || "",
+        record: r,
+        updated_at: new Date().toISOString()
+      }));
+
+      const { error } = await sb.from("records").upsert(rows, { onConflict: "id" });
+      if (error) throw error;
+      this._cache = records.slice();
+      return true;
+    } catch (e) {
+      console.error("Supabase write error:", e);
+      showToast("Cloud DB save failed: " + e.message, "danger");
+      return false;
+    }
+  },
+
+  async deleteOne(ward, gis, ulbFile = currentUlbFile) {
+    try {
+      const id = `${ulbFile}~${norm(ward)}~${norm(gis)}`.replace(/[\s\/]+/g, "_");
+      const { error } = await sb.from("records").delete().eq("id", id);
+      if (error) throw error;
+      if (this._cache) {
+        this._cache = this._cache.filter(r => !(norm(r.ward) === norm(ward) && norm(r.gis_id) === norm(gis) && (r.ulb_file || currentUlbFile) === ulbFile));
+      }
+      return true;
+    } catch (e) {
+      showToast("Delete failed: " + e.message, "danger");
+      return false;
+    }
+  },
+
+  async clear() {
+    try {
+      const { error } = await sb.from("records").delete().neq("id", "");
+      if (error) throw error;
+      this._cache = [];
+      return true;
+    } catch (e) {
+      showToast("Clear failed: " + e.message, "danger");
+      return false;
+    }
+  }
+};
+
+/* ==========================================================================
+   CLOUD RECYCLE BIN & CLOUD DRAFTS (Supabase)
+========================================================================== */
+const Trash = {
+  RETENTION_DAYS: 30,
+
+  async list() {
+    try {
+      const { data, error } = await sb.from("recycle_bin").select("*").order("deleted_at", { ascending: false });
+      if (error) throw error;
+      return data || [];
+    } catch (e) { return []; }
+  },
+
+  async add(record) {
+    try {
+      const tid = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const { error } = await sb.from("recycle_bin").insert({
+        tid, deleted_at: Date.now(), deleted_by: currentUserLabel(), record
+      });
+      if (error) throw error;
+      return tid;
+    } catch (e) { return null; }
+  },
+
+  async remove(tid) {
+    try {
+      await sb.from("recycle_bin").delete().eq("tid", tid);
+      return true;
+    } catch (e) { return false; }
+  },
+
+  async clear() {
+    try {
+      await sb.from("recycle_bin").delete().neq("tid", "");
+      return true;
+    } catch (e) { return false; }
+  }
+};
+
+const Draft = {
+  DEBOUNCE_MS: 800,
+  suspended: true,
+  pending: null,
+  _timer: 0,
+
+  async _put(d) {
+    if (!currentUserProfile?.uid) return;
+    await sb.from("drafts").upsert({ uid: currentUserProfile.uid, draft_data: d, updated_at: new Date() }, { onConflict: "uid" });
+  },
+
+  async _get() {
+    if (!currentUserProfile?.uid) return null;
+    const { data } = await sb.from("drafts").select("draft_data").eq("uid", currentUserProfile.uid).maybeSingle();
+    return data ? data.draft_data : null;
+  },
+
+  async _del() {
+    if (!currentUserProfile?.uid) return;
+    await sb.from("drafts").delete().eq("uid", currentUserProfile.uid);
+  },
+
+  schedule() {
+    clearTimeout(this._timer);
+    this._timer = setTimeout(() => this._sync(), this.DEBOUNCE_MS);
+  },
+
+  async _sync() {
+    if (this.suspended || !isEngineLoaded) return;
+    syncFloorDomToState();
+    const rec = readFormRecord();
+    const hasData = TOP_FIELDS.some(([id]) => String(rec[id] || "").trim() !== "") || Object.keys(rec.floors || {}).length > 0;
+    if (hasData) {
+      await this._put({ record: rec, ulb_file: currentUlbFile, ulb_name: currentUlbName, saved_at: Date.now() });
+    } else {
+      await this._del();
+    }
+  },
+
+  async offer() {
+    const d = await this._get();
+    if (!d || !d.record) { this.suspended = false; return; }
+    this.pending = d;
+    $("draftBannerText").textContent = `Cloud draft found for ${d.ulb_name} (${d.record.ward || "No Ward"} / GIS ${d.record.gis_id || "Unset"}).`;
+    $("draftBanner").style.display = "flex";
+  },
+
+  async restore() {
+    if (!this.pending) return;
+    fillForm(this.pending.record);
+    $("draftBanner").style.display = "none";
+    this.pending = null;
+    this.suspended = false;
+    showToast("Draft restored from Supabase.", "success");
+  },
+
+  async discard() {
+    this.pending = null;
+    $("draftBanner").style.display = "none";
+    await this._del();
+    this.suspended = false;
+  },
+
+  init() {
+    $("form").addEventListener("input", () => this.schedule());
+    $("form").addEventListener("change", () => this.schedule());
+  }
+};
+
+/* ==========================================================================
+   USER AUTHENTICATION & ACCESS CONTROL (Embedded from index-bugfix)
+========================================================================== */
+function hidePreload() {
+  const el = $("preloadView");
+  if (el) el.classList.add("hide");
+}
+
+function showAuthGate() {
+  $("authGateEmail").value = "";
+  $("authGatePassword").value = "";
+  $("authGateError").style.display = "none";
+  $("authGateModal").style.display = "flex";
+}
+function hideAuthGate() { $("authGateModal").style.display = "none"; }
+
+async function submitAuthGate() {
+  const email = $("authGateEmail").value.trim();
+  const password = $("authGatePassword").value;
+  const errEl = $("authGateError");
+  errEl.style.display = "none";
+
+  if (!email || !password) {
+    errEl.textContent = "Please enter both email and password.";
+    errEl.style.display = "block";
+    return;
+  }
+
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) {
+    errEl.textContent = error.message;
+    errEl.style.display = "block";
+  }
+}
+
+async function fetchOrCreateUserProfile(user) {
+  for (let i = 0; i < 3; i++) {
+    const { data } = await sb.from("profiles").select("email, role, active").eq("id", user.id).maybeSingle();
+    if (data) return { uid: user.id, email: data.email || user.email, role: data.role === "admin" ? "admin" : "field_staff", active: data.active === true };
+    await new Promise(r => setTimeout(r, 400));
+  }
+  // Auto-provision profile row if trigger is missing
+  await sb.from("profiles").upsert({ id: user.id, email: user.email, role: "field_staff", active: false });
+  return { uid: user.id, email: user.email, role: "field_staff", active: false };
+}
+
+sb.auth.onAuthStateChange((event, session) => setTimeout(() => handleAuthChange(session), 0));
+
+async function handleAuthChange(session) {
+  const user = session?.user;
+  hidePreload();
+
+  if (!user) {
+    currentUserProfile = null;
+    document.body.classList.remove("app-ready");
+    updateAuthUI();
+    showAuthGate();
+    return;
+  }
+
+  currentUserProfile = await fetchOrCreateUserProfile(user);
+  if (!currentUserProfile.active) {
+    hideAuthGate();
+    $("authPendingEmail").textContent = currentUserProfile.email;
+    $("authPendingModal").style.display = "flex";
+    return;
+  }
+
+  $("authPendingModal").style.display = "none";
+  hideAuthGate();
+  updateAuthUI();
+  watchOwnProfile(currentUserProfile.uid);
+  startIdleWatch();
+  bootApp();
+}
+
+async function recheckApproval() {
+  const { data } = await sb.auth.getSession();
+  if (data?.session?.user) {
+    currentUserProfile = await fetchOrCreateUserProfile(data.session.user);
+    if (currentUserProfile.active) {
+      $("authPendingModal").style.display = "none";
+      bootApp();
+    } else {
+      showToast("Account still pending approval by admin.", "warning");
+    }
+  }
+}
+
+function updateAuthUI() {
+  const signed = isSignedIn();
+  const admin = isAdminLoggedIn();
+  const label = $("sidebarLoggedInLabel");
+  if (label && signed) label.textContent = `Signed in: ${currentUserProfile.email} (${admin ? "Admin" : "Field Staff"})`;
+  document.querySelectorAll(".admin-only-nav").forEach(el => el.style.display = admin ? "" : "none");
+}
+
+let _profileChannel = null;
+function watchOwnProfile(uid) {
+  if (_profileChannel) sb.removeChannel(_profileChannel);
+  _profileChannel = sb.channel(`profile-revoc-${uid}`)
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${uid}` }, payload => {
+      if (payload.new && payload.new.active === false) {
+        showToast("Your staff account was revoked by an administrator.", "danger");
+        sb.auth.signOut();
+      }
+    }).subscribe();
+}
+
+let _lastAct = Date.now();
+function startIdleWatch() {
+  ["pointerdown", "keydown"].forEach(ev => window.addEventListener(ev, () => _lastAct = Date.now(), { passive: true }));
+  setInterval(() => {
+    if (isSignedIn() && Date.now() - _lastAct > 20 * 60 * 1000) {
+      sb.auth.signOut();
+    }
+  }, 15000);
+}
+
+async function openManageUsersModal() {
+  if (!isAdminLoggedIn()) return;
+  const listEl = $("manageUsersList");
+  listEl.innerHTML = "Fetching user roster from Supabase...";
+  $("manageUsersModal").style.display = "flex";
+  const { data } = await sb.from("profiles").select("*").order("created_at", { ascending: true });
+  listEl.innerHTML = (data || []).map(u => {
+    const isMe = u.id === currentUserProfile.uid;
+    return `
+    <div class="user-card-row">
+      <div>
+        <div style="font-weight:700;">${esc(u.email)}</div>
+        <div style="font-size:11.5px; color:var(--text-secondary);">${u.active ? "Active" : "Approval Pending"}</div>
+      </div>
+      <div style="display:flex; gap:6px;">
+        <select onchange="updateUserRole('${u.id}', this.value)" ${isMe ? "disabled" : ""}>
+          <option value="field_staff" ${u.role === 'field_staff' ? 'selected' : ''}>Field Staff</option>
+          <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
+        </select>
+        <button type="button" class="page-btn" ${isMe ? "disabled" : ""} onclick="toggleUserActive('${u.id}', ${!u.active})">
+          ${u.active ? 'Disable' : 'Approve'}
+        </button>
+      </div>
+    </div>`;
+  }).join("") || "No users found.";
+}
+function closeManageUsersModal() { $("manageUsersModal").style.display = "none"; }
+async function toggleUserActive(uid, state) {
+  await sb.from("profiles").update({ active: state }).eq("id", uid);
+  openManageUsersModal();
+}
+async function updateUserRole(uid, role) {
+  await sb.from("profiles").update({ role }).eq("id", uid);
+  openManageUsersModal();
+}
+
+/* ==========================================================================
+   PSAM TAX ENGINES & CALCULATION LOGIC
+========================================================================== */
+const TAX_ENGINES_REGISTRY = {
+  "mcpaonta": {
+    id: "mcpaonta",
+    ULB_NAME: "MC Paonta Sahib",
+    OPTIONS: {
+      WARD: ["Ward 1", "Ward 2", "Ward 3", "Ward 4", "Ward 5", "Ward 6", "Ward 7", "Ward 8", "Ward 9", "Ward 10", "Ward 11", "Ward 12", "Ward 13"],
+      ZONE: ["N/A", "A", "B"],
+      BUILD: ["N/A", "PUCCA", "KUCHA", "SEMI-PUCCA"],
+      YEAR: ["N/A", "BEFORE 1970", "ABOVE 1971 TO 1980", "ABOVE 1981 TO 2002", "ABOVE 2003 TO 2021", "2021 & BEYOND"],
+      OCCUPANCY: ["N/A", "SELF RESIDENTIAL", "LETOUT RESIDENTIAL", "UNDER CONSTRUCTION", "CATTLE SHED", "HOTELS", "SHOWROOMS", "RESTAURANT", "BARS", "BANKS", "ATMS", "SHOPS", "OFFICES"]
+    },
+    FACTORS: { ZONE: { "A": { f1: 2.5, f5: 7.0 }, "B": { f1: 3.0, f5: 2.0 } }, TAX_RATE: 0.125, MAINTENANCE_REBATE: 0.10 },
+    resolveF1(z) { const k = norm(z).toUpperCase(); return this.FACTORS.ZONE[k]?.f1 || 0; },
+    resolveF5(z) { const k = norm(z).toUpperCase(); return this.FACTORS.ZONE[k]?.f5 || 0; },
+    resolveF2(b) { const v = norm(b).toUpperCase(); if(v.includes("SEMI")) return 2.0; if(v.includes("PUCCA")) return 3.0; if(v.includes("KUCHA")) return 1.5; return 0; },
+    resolveF3(y) { const v = norm(y).toUpperCase(); if(v.includes("BEYOND")) return 6.0; if(v.includes("2021")) return 5.0; if(v.includes("2002")) return 4.0; if(v.includes("1980")) return 3.0; return 2.0; },
+    resolveF4(o, area) {
+      const occ = norm(o).toUpperCase();
+      if (["UNDER CONSTRUCTION", "CATTLE SHED", "N/A", ""].includes(occ)) return 0;
+      if (occ.includes("SELF")) return 3.0;
+      if (occ.includes("LETOUT") || occ.includes("LET OUT")) return 6.0;
+      if (["HOTELS", "SHOWROOMS", "RESTAURANT"].includes(occ)) return area > 300 ? 10.0 : area >= 100 ? 8.0 : 5.0;
+      if (["BARS", "BANKS", "ATMS"].some(k => occ.includes(k))) return 5.0;
+      return 4.0;
+    },
+    calculateEntryTax(entry) {
+      if (norm(entry.yes_no) !== "yes") return 0;
+      const area = parseFloat(entry.area);
+      if (isNaN(area) || area <= 0) return 0;
+      const f1 = this.resolveF1(entry.zone), f2 = this.resolveF2(entry.building_type);
+      const f3 = this.resolveF3(entry.year), f4 = this.resolveF4(entry.occupancy, area);
+      const f5 = this.resolveF5(entry.zone);
+      if (!f1 || !f2 || !f3 || !f4 || !f5) return 0;
+      const netARV = (area * f1 * f2 * f3 * f4 * f5) * (1 - this.FACTORS.MAINTENANCE_REBATE);
+      return Number((netARV * this.FACTORS.TAX_RATE).toFixed(2));
+    }
+  },
+  "mcnahan": {
+    id: "mcnahan",
+    ULB_NAME: "MC Nahan",
+    OPTIONS: {
+      WARD: ["Ward 1", "Ward 2", "Ward 3", "Ward 4", "Ward 5", "Ward 6", "Ward 7", "Ward 8", "Ward 9", "Ward 10"],
+      ZONE: ["N/A"], BUILD: ["N/A", "PUCCA", "KUCHA"], YEAR: ["N/A"], OCCUPANCY: ["N/A", "SELF RESIDENTIAL", "LETOUT RESIDENTIAL", "SHOPS"]
+    },
+    calculateEntryTax() { return 0; }
+  }
+};
+
+let currentUlbFile = "";
+let currentUlbName = "";
+let isEngineLoaded = false;
+let editingIndex = -1;
+let editBaseline = null;
+let loadedIdentity = null;
+const INR = new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const norm = v => String(v ?? "").trim().toLowerCase();
+const esc = v => String(v ?? "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+function normalizeWard(w) {
+  const m = String(w || "").match(/\d+/);
+  return m ? `Ward ${m[0]}` : String(w || "").trim();
+}
+
+const ALL_FLOORS = [["ground", "Ground Floor"], ["first", "First Floor"], ["second", "Second Floor"], ["third", "Third Floor"]];
+let activeFloors = ALL_FLOORS.slice(0, 2);
+let floorEntries = { ground: [{}], first: [{}] };
+
+const TOP_FIELDS = [
+  ["ward", { label: "Ward", required: true, spanClass: "col-third" }],
+  ["gis_id", { label: "GIS ID", required: true, withNavButtons: true, spanClass: "col-third" }],
+  ["old_house_no", { label: "Old House No", spanClass: "col-third" }],
+  ["owner_name", { label: "Owner Name", spanClass: "col-half" }],
+  ["father_husband_name", { label: "Father / Husband Name", spanClass: "col-half" }],
+  ["mobile_no", { label: "Mobile Number", spanClass: "col-third" }],
+  ["address", { label: "Property Address", spanClass: "col-two-thirds" }]
+];
+
+const FLOOR_FIELDS = [
+  ["yes_no", "Yes/No", ["No", "Yes"]],
+  ["zone", "ZONE", ["A", "B"]],
+  ["building_type", "Building Type", ["PUCCA", "KUCHA", "SEMI-PUCCA"]],
+  ["year", "Year", ["BEFORE 1970", "2021 & BEYOND"]],
+  ["occupancy", "Occupancy", ["SELF RESIDENTIAL", "LETOUT RESIDENTIAL", "SHOPS", "HOTELS"]],
+  ["area", "Area (Sq. Mtr.)", null]
+];
+
+function buildUlbMenu() {
+  const sel = $("ulbSelect"), modalSel = $("modalUlbSelect");
+  sel.innerHTML = '<option value="">Select ULB...</option>';
+  modalSel.innerHTML = '<option value="">-- Select ULB --</option>';
+  Object.values(TAX_ENGINES_REGISTRY).forEach(eng => {
+    sel.appendChild(new Option(eng.ULB_NAME, eng.id));
+    modalSel.appendChild(new Option(eng.ULB_NAME, eng.id));
+  });
+  $("ulbPromptModal").style.display = "flex";
+}
+
+function confirmModalUlbSelection() {
+  const chosen = $("modalUlbSelect").value;
+  if (!chosen) return;
+  $("ulbSelect").value = chosen;
+  switchTaxEngine(chosen);
+  $("ulbPromptModal").style.display = "none";
+}
+
+function switchTaxEngine(ulbKey) {
+  const eng = TAX_ENGINES_REGISTRY[ulbKey];
+  if (!eng) return;
+  window.TaxCalculator = eng;
+  currentUlbFile = eng.id;
+  currentUlbName = eng.ULB_NAME;
+  isEngineLoaded = true;
+
+  document.body.classList.add("app-ready");
+
+  $("topGrid").innerHTML = TOP_FIELDS.map(([id, o]) => `
+    <div class="field ${o.spanClass}">
+      <label>${o.label}${o.required ? '<span class="req-star">*</span>' : ''}</label>
+      ${id === 'ward' ? `<select id="ward" name="ward"><option value="">-- Select Ward --</option>${(eng.OPTIONS.WARD||[]).map(w=>`<option value="${w}">${w}</option>`).join('')}</select>`
+      : o.withNavButtons ? `<div class="gis-row"><input id="${id}" name="${id}" autocomplete="off"><div class="gis-controls"><button type="button" class="gis-view-btn" onclick="searchRecord()">View</button></div></div>`
+      : `<input id="${id}" name="${id}" autocomplete="off">`}
+    </div>`).join("");
+
+  buildFloorGrid();
+  updateRecordCount();
+  Draft.offer();
+}
+
+function buildFloorGrid() {
+  let html = `<div class="fth">Floor</div>` + FLOOR_FIELDS.map(f => `<div class="fth">${f[1]}</div>`).join("") + `<div class="fth">Tax (₹)</div><div class="fth">Actions</div>`;
+  activeFloors.forEach(([p, label]) => {
+    const entries = floorEntries[p] || [{}];
+    entries.forEach((e, idx) => {
+      html += `<div class="frow-label">${label}</div>`;
+      FLOOR_FIELDS.forEach(([k, _, opts]) => {
+        const name = `${p}__${idx}__${k}`;
+        if (opts) {
+          html += `<div class="ftd"><select name="${name}" onchange="syncFloorDomToState(); updateUiCalculations();"><option value="">--</option>${opts.map(v=>`<option ${e[k]===v?'selected':''}>${v}</option>`).join("")}</select></div>`;
+        } else {
+          html += `<div class="ftd"><input name="${name}" value="${e[k]||''}" oninput="syncFloorDomToState(); updateUiCalculations();"></div>`;
+        }
+      });
+      html += `<div class="ftd ftd-tax" id="tax__${p}__${idx}">₹0.00</div>`;
+      html += `<div class="ftd">${idx === entries.length-1 ? `<button type="button" class="page-btn" onclick="addFloorSubRow('${p}')">+ Add</button>` : ''}</div>`;
+    });
+  });
+  $("floorGrid").innerHTML = html;
+  $("floorGrid").style.gridTemplateColumns = `120px repeat(6, 1fr) 100px 80px`;
+  updateUiCalculations();
+}
+
+function addFloorSubRow(p) {
+  if (!floorEntries[p]) floorEntries[p] = [{}];
+  floorEntries[p].push({ yes_no: "Yes" });
+  buildFloorGrid();
+}
+
+function syncFloorDomToState() {
+  $("floorGrid").querySelectorAll("[name]").forEach(el => {
+    const [p, idx, key] = el.name.split("__");
+    if (floorEntries[p] && floorEntries[p][+idx]) floorEntries[p][+idx][key] = el.value;
+  });
+}
+
+function updateUiCalculations() {
+  let total = 0;
+  activeFloors.forEach(([p]) => {
+    (floorEntries[p] || []).forEach((e, idx) => {
+      const tax = window.TaxCalculator ? window.TaxCalculator.calculateEntryTax(e) : 0;
+      total += tax;
+      const cell = $(`tax__${p}__${idx}`);
+      if (cell) cell.textContent = `₹${INR.format(tax)}`;
+    });
+  });
+  $("totalTaxDisplay").textContent = `₹${INR.format(total)}`;
+}
+
+function readFormRecord() {
+  syncFloorDomToState();
+  return {
+    ward: $("ward") ? normalizeWard($("ward").value) : "",
+    gis_id: $("gis_id") ? $("gis_id").value.trim() : "",
+    old_house_no: $("old_house_no") ? $("old_house_no").value.trim() : "",
+    owner_name: $("owner_name") ? $("owner_name").value.trim().toUpperCase() : "",
+    father_husband_name: $("father_husband_name") ? $("father_husband_name").value.trim().toUpperCase() : "",
+    mobile_no: $("mobile_no") ? $("mobile_no").value.trim() : "",
+    address: $("address") ? $("address").value.trim().toUpperCase() : "",
+    floors: JSON.parse(JSON.stringify(floorEntries)),
+    ulb_file: currentUlbFile,
+    ulb_name: currentUlbName
+  };
+}
+
+function fillForm(r) {
+  if (!r) return;
+  ["ward", "gis_id", "old_house_no", "owner_name", "father_husband_name", "mobile_no", "address"].forEach(k => {
+    if ($(k))$(k).value = r[k] || "";
+  });
+  if (r.floors) {
+    floorEntries = JSON.parse(JSON.stringify(r.floors));
+    buildFloorGrid();
+  }
+}
+
+async function persist(mode) {
+  const rec = readFormRecord();
+  if (!rec.ward || !rec.gis_id) return showToast("Ward and GIS ID are required", "warning");
+
+  const recs = await DB.getAll();
+  const existingIdx = recs.findIndex(r => norm(r.ward) === norm(rec.ward) && norm(r.gis_id) === norm(rec.gis_id) && (r.ulb_file||currentUlbFile) === currentUlbFile);
+
+  if (mode === "save") {
+    if (existingIdx > -1) return showToast("Record already exists. Click View to load it.", "warning");
+    rec.saved_date = new Date().toLocaleString("en-IN");
+    recs.push(rec);
+  } else {
+    if (existingIdx === -1) return showToast("Record not found to update.", "danger");
+    rec.updated_date = new Date().toLocaleString("en-IN");
+    rec.saved_date = recs[existingIdx].saved_date;
+    rec.change_log = (recs[existingIdx].change_log || []).concat({
+      at: new Date().toLocaleString("en-IN"), by: currentUserLabel(), tax: $("totalTaxDisplay").textContent
+    });
+    recs[existingIdx] = rec;
+  }
+
+  const ok = await DB.saveAll(recs);
+  if (ok) {
+    showToast(`Record ${mode === 'save' ? 'saved to' : 'updated in'} Supabase!`, "success");
+    await Draft.discard();
+    handleResetClick();
+    updateRecordCount();
+  }
+}
+
+async function searchRecord() {
+  const ward = $("ward").value, gis = $("gis_id").value.trim();
+  if (!ward || !gis) return showToast("Enter Ward and GIS ID to view.", "warning");
+  
+  await DB.fetchOne(ward, gis);
+  const recs = await DB.getAll();
+  const idx = recs.findIndex(r => norm(r.ward) === norm(ward) && norm(r.gis_id) === norm(gis) && (r.ulb_file||currentUlbFile) === currentUlbFile);
+  
+  if (idx === -1) return showToast("Property record not found in cloud database.", "warning");
+  
+  editingIndex = idx;
+  fillForm(recs[idx]);
+  $("saveBtn").style.display = "none";
+  $("updateBtn").style.display = "inline-block";
+  $("deleteBtn").style.display = isAdminLoggedIn() ? "inline-block" : "none";
+  $("invoiceBtn").style.display = "inline-block";
+  $("historyBtn").style.display = "inline-block";
+  showToast(`Loaded ${ward} / GIS ${gis}`);
+}
+
+async function deleteRecord() {
+  if (!isAdminLoggedIn()) return showToast("Admin privileges required to delete records.", "danger");
+  const ward = $("ward").value, gis = $("gis_id").value.trim();
+  if (!confirm(`Move ${ward} / GIS ID ${gis} to Supabase cloud Recycle Bin?`)) return;
+
+  const recs = await DB.getAll();
+  const idx = recs.findIndex(r => norm(r.ward) === norm(ward) && norm(r.gis_id) === norm(gis) && (r.ulb_file||currentUlbFile) === currentUlbFile);
+  if (idx > -1) {
+    await Trash.add(recs[idx]);
+    await DB.deleteOne(ward, gis);
+    showToast("Record moved to Recycle Bin.", "info");
+    handleResetClick();
+    updateRecordCount();
+  }
+}
+
+function handleResetClick() {
+  $("form").reset();
+  editingIndex = -1;
+  $("saveBtn").style.display = "inline-block";
+  $("updateBtn").style.display = "none";
+  $("deleteBtn").style.display = "none";
+  $("invoiceBtn").style.display = "none";
+  $("historyBtn").style.display = "none";
+  floorEntries = { ground: [{}], first: [{}] };
+  buildFloorGrid();
+}
+
+async function updateRecordCount() {
+  const recs = await DB.getAll();
+  $("recordCount").textContent = `Cloud Records: ${recs.length} (${currentUlbName})`;
+}
+
+/* ==========================================================================
+   APP INITIALIZATION
+========================================================================== */
+const Theme = {
+  _mode: "auto",
+  get() { return this._mode; },
+  apply() {
+    const dark = this._mode === "dark" || (this._mode === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    $("themeBtn").textContent = "Theme: " + (this._mode.charAt(0).toUpperCase() + this._mode.slice(1));
+  },
+  cycle() {
+    this._mode = this._mode === "auto" ? "dark" : this._mode === "dark" ? "light" : "auto";
+    this.apply();
+  }
+};
+
+function toggleSidebar(open) {
+  $("sidebarDrawer").classList.toggle("open", open);
+  $("sidebarOverlay").classList.toggle("active", open);
+}
+
+function showToast(msg, type = "info") {
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${type}`;
+  toast.innerHTML = `<span style="flex:1;">${msg}</span><button type="button" class="toast-close" onclick="this.parentElement.remove()">&times;</button>`;
+  $("toast-container").appendChild(toast);
+  void getComputedStyle(toast).opacity;
+  toast.classList.add("show");
+  setTimeout(() => toast.remove(), 4000);
+}
+
+function bootApp() {
+  if (_appBooted) return;
+  _appBooted = true;
+  Draft.init();
+  buildUlbMenu();
+}
+
+Theme.apply();
+</script>
+</body>
+</html>
