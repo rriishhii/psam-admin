@@ -5950,7 +5950,66 @@ function getOccupancyGroupsFromUI(containerId) {
     });
   }
   return result;
-                                                                                                                       }
+function addFactorRow(containerId, name = '', rate = 1.0) {
+  const container = $(containerId);
+  const row = document.createElement('div');
+  row.style.display = 'flex';
+  row.style.gap = '8px';
+  row.style.marginBottom = '6px';
+  row.innerHTML = `
+    <input type="text" placeholder="Option Name" value="${name}" class="config-opt-name" style="flex:2; height:28px; font-size:12px;">
+    <input type="number" step="0.01" placeholder="Rate" value="${rate}" class="config-opt-rate" style="flex:1; height:28px; font-size:12px;">
+    <button type="button" class="frow-remove-btn" onclick="this.parentElement.remove()" style="height:28px;">&times;</button>
+  `;
+  container.appendChild(row);
+}
+
+function addF4Row(containerId, group='', limit=0, rateBelow=1.0, rateAbove=1.0, options='') {
+  const container = $(containerId);
+  const row = document.createElement('div');
+  row.style.display = 'flex';
+  row.style.gap = '6px';
+  row.style.marginBottom = '6px';
+  row.innerHTML = `
+    <input type="text" placeholder="Group Name" value="${group}" class="f4-group" style="width:20%; height:28px; font-size:12px;">
+    <input type="number" placeholder="Max Area" value="${limit}" class="f4-limit" style="width:15%; height:28px; font-size:12px;">
+    <input type="number" step="0.01" placeholder="Rate <=" value="${rateBelow}" class="f4-below" style="width:15%; height:28px; font-size:12px;">
+    <input type="number" step="0.01" placeholder="Rate >" value="${rateAbove}" class="f4-above" style="width:15%; height:28px; font-size:12px;">
+    <input type="text" placeholder="Options (comma separated)" value="${options}" class="f4-opts" style="width:30%; height:28px; font-size:12px;">
+    <button type="button" class="frow-remove-btn" onclick="this.parentElement.remove()" style="height:28px;">&times;</button>
+  `;
+  container.appendChild(row);
+}
+
+function getFactorListFromUI(containerId) {
+  const rows = $(containerId).children;
+  const result = [];
+  for(let row of rows) {
+     const name = row.querySelector('.config-opt-name').value.trim().toUpperCase();
+     const rate = parseFloat(row.querySelector('.config-opt-rate').value) || 1.0;
+     if(name) result.push({ name, rate });
+  }
+  return result.length ? result : [{name: "N/A", rate: 1.0}];
+}
+
+function getOccupancyGroupsFromUI(containerId) {
+  const rows = $(containerId).children;
+  const result = [];
+  for(let row of rows) {
+    const group = row.querySelector('.f4-group').value.trim().toUpperCase();
+    if (!group) continue;
+    result.push({
+      group: group,
+      limit: parseFloat(row.querySelector('.f4-limit').value) || 0,
+      rateBelow: parseFloat(row.querySelector('.f4-below').value) || 1.0,
+      rateAbove: parseFloat(row.querySelector('.f4-above').value) || 1.0,
+      options: row.querySelector('.f4-opts').value.split(',').map(o => o.trim().toUpperCase()).filter(Boolean)
+    });
+  }
+  return result.length ? result : [{ group: "DEFAULT", limit: 9999, rateBelow: 1.0, rateAbove: 1.0, options: ["N/A"] }];
+         }
+}
+
 function loadUlbConfig(ulbId) {
   const isNew = ulbId === "new";
   const cfg = isNew ? null : ULB_REGISTRY[ulbId];
@@ -5959,31 +6018,25 @@ function loadUlbConfig(ulbId) {
   $("cfgRateableRate").value = cfg?.TAX_RATES?.rateable || "";
   $("cfgMaintenanceRate").value = cfg?.TAX_RATES?.maintenance || "";
   
-  // Clear existing rows
+  // Clear all existing rows to create a blank slate
   ['cfgF1-container', 'cfgF2-container', 'cfgF3-container', 'cfgF4-container', 'cfgF5-container'].forEach(id => {
     $(id).innerHTML = '';
   });
 
-  // Populate F1, F2, F3, F5
-  const populateFactors = (containerId, optionsList) => {
-    const opts = (isNew || !optionsList) ? [{name: "N/A", rate: 1.0}] : optionsList;
-    opts.forEach(opt => addFactorRow(containerId, opt.name, opt.rate));
-  };
+  // Only populate rows if editing an EXISTING configuration
+  if (!isNew && cfg) {
+    (cfg.OPTIONS?.ZONE || []).forEach(opt => addFactorRow('cfgF1-container', opt.name, opt.rate));
+    (cfg.OPTIONS?.BUILD || []).forEach(opt => addFactorRow('cfgF2-container', opt.name, opt.rate));
+    (cfg.OPTIONS?.YEAR || []).forEach(opt => addFactorRow('cfgF3-container', opt.name, opt.rate));
+    (cfg.OPTIONS?.USE || []).forEach(opt => addFactorRow('cfgF5-container', opt.name, opt.rate));
 
-  populateFactors('cfgF1-container', cfg?.OPTIONS?.ZONE);
-  populateFactors('cfgF2-container', cfg?.OPTIONS?.BUILD);
-  populateFactors('cfgF3-container', cfg?.OPTIONS?.YEAR);
-  populateFactors('cfgF5-container', cfg?.OPTIONS?.USE);
-
-  // Populate F4
-  const occData = cfg?.OPTIONS?.OCCUPANCY || [];
-  if (isNew || !occData.length) {
-    addF4Row('cfgF4-container');
-  } else if (!occData[0]?.group) {
-    // Legacy fallback mapping
-    addF4Row('cfgF4-container', 'Legacy', 9999, 1.0, 1.0, occData.join(', '));
-  } else {
-    occData.forEach(g => addF4Row('cfgF4-container', g.group, g.limit, g.rateBelow, g.rateAbove, (g.options || []).join(', ')));
+    const occData = cfg.OPTIONS?.OCCUPANCY || [];
+    if (occData.length > 0 && occData[0].group) {
+      occData.forEach(g => addF4Row('cfgF4-container', g.group, g.limit, g.rateBelow, g.rateAbove, (g.options || []).join(', ')));
+    } else if (occData.length > 0) {
+      // Legacy fallback mapping
+      addF4Row('cfgF4-container', 'Legacy', 9999, 1.0, 1.0, occData.join(', '));
+    }
   }
 }
 
