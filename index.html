@@ -1629,6 +1629,10 @@
          Clear All Data: admin only, listed last as the most destructive action. -->
     <div class="sidebar-nav-list">
       <p class="sidebar-section-title admin-only-nav">Database</p>
+     <button type="button" class="sidebar-btn admin-only-nav" onclick="toggleSidebar(false); openUlbConfigModal();">
+        <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .43-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.49-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+        Tax & ULB Configuration
+     </button>
       <button type="button" class="sidebar-btn admin-only-nav" id="sidebarRestoreBtn" onclick="toggleSidebar(false); triggerDatabaseRestore();">
         <svg viewBox="0 0 24 24"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
         Import Database (JSON)
@@ -1754,7 +1758,71 @@
     <button type="button" class="modal-link-btn" onclick="closeUpdatedExportModal()">Cancel</button>
   </div>
 </div>
+<!-- ULB & Tax Configuration Modal (Admin Only) -->
+<div id="ulbConfigModal" class="modal-overlay-lg" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="ulbConfigTitle">
+  <div class="modal-card-lg" style="max-width: 760px;">
+    <div class="modal-header-lg">
+      <h3 id="ulbConfigTitle">Configure ULB & Tax Rates</h3>
+      <button type="button" class="modal-close-btn" onclick="closeUlbConfigModal()" aria-label="Close dialog">&times;</button>
+    </div>
+    <div class="modal-body-lg">
+      <div class="filter-bar" style="margin-bottom: 20px;">
+        <select id="configUlbSelector" onchange="loadUlbConfig(this.value)" style="flex: 1 1 100%;">
+          <option value="new">-- Create New ULB Configuration --</option>
+        </select>
+      </div>
 
+      <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div class="login-field" style="grid-column: span 2;">
+          <label class="oc-field-label">ULB Name / Identifier</label>
+          <input type="text" id="cfgUlbName" placeholder="e.g., MC Paonta Sahib" autocomplete="off">
+        </div>
+        
+        <div class="login-field">
+          <label class="oc-field-label">Rateable Rate (%)</label>
+          <input type="number" id="cfgRateableRate" placeholder="e.g., 10" step="0.01">
+        </div>
+        
+        <div class="login-field">
+          <label class="oc-field-label">Maintenance Rate (%)</label>
+          <input type="number" id="cfgMaintenanceRate" placeholder="e.g., 10" step="0.01">
+        </div>
+
+        <div class="login-field">
+          <label class="oc-field-label">F1: Zone (Comma separated)</label>
+          <textarea id="cfgF1" rows="3" placeholder="A, B, C, N/A"></textarea>
+        </div>
+
+        <div class="login-field">
+          <label class="oc-field-label">F2: Building Type (Comma separated)</label>
+          <textarea id="cfgF2" rows="3" placeholder="PUCCA, KUCHA, SEMI-PUCCA, N/A"></textarea>
+        </div>
+
+        <div class="login-field">
+          <label class="oc-field-label">F3: Age Factor / Year (Comma separated)</label>
+          <textarea id="cfgF3" rows="3" placeholder="BEFORE 1970, 1971-1980..."></textarea>
+        </div>
+
+        <div class="login-field">
+          <label class="oc-field-label">F4: Occupancy (Comma separated)</label>
+          <textarea id="cfgF4" rows="3" placeholder="SELF RESIDENTIAL, LETOUT..."></textarea>
+        </div>
+
+        <div class="login-field" style="grid-column: span 2;">
+          <label class="oc-field-label">F5: Building Use (Comma separated)</label>
+          <textarea id="cfgF5" rows="3" placeholder="HOTELS, SHOPS, OFFICES..."></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer-lg">
+      <span class="report-panel-note" style="margin:0;">Settings apply immediately to the form interface.</span>
+      <div class="footer-actions">
+        <button type="button" class="page-btn" onclick="closeUlbConfigModal()">Cancel</button>
+        <button type="button" class="btn-proceed" style="width: auto; height: 36px; padding: 0 16px;" onclick="saveUlbConfig()">Save Configuration</button>
+      </div>
+    </div>
+  </div>
+</div>
 <!-- About Modal -->
 <div id="aboutModal" class="modal-overlay" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
   <div class="modal-card" style="max-width: 460px; text-align: left;">
@@ -2645,6 +2713,10 @@ function refreshOptionsFromEngine() {
   BUILD = window.UlbConfig?.OPTIONS?.BUILD || ["N/A"];
   YEAR = window.UlbConfig?.OPTIONS?.YEAR || ["N/A"];
   OCCUPANCY = window.UlbConfig?.OPTIONS?.OCCUPANCY || ["N/A"];
+  
+  // Note: F5 (Building Use) is saved in the ULB_REGISTRY from the config modal 
+  // so your calculation engine can reference it, but we do not add it to FLOOR_FIELDS.
+  let USE = window.UlbConfig?.OPTIONS?.USE || ["N/A"];
 
   TOP_FIELDS = [
     ["ward", { label: "Ward", required: true, spanClass: "col-third", options: WARD, helper: "Select ward number" }],
@@ -5773,7 +5845,83 @@ function switchReportTab(tab) {
   });
 }
 
+/* ==========================================================================
+   ULB & TAX CONFIGURATION
+========================================================================== */
+function openUlbConfigModal() {
+  if (!ensureAdminAccess(openUlbConfigModal)) return;
+  const selector = $("configUlbSelector");
+  selector.innerHTML = `<option value="new">-- Create New ULB Configuration --</option>`;
+  
+  Object.keys(ULB_REGISTRY).forEach(id => {
+    selector.innerHTML += `<option value="${id}">${ULB_REGISTRY[id].ULB_NAME}</option>`;
+  });
+  
+  if (currentUlbFile && ULB_REGISTRY[currentUlbFile]) {
+    selector.value = currentUlbFile;
+  } else {
+    selector.value = "new";
+  }
+  
+  loadUlbConfig(selector.value);
+  $("ulbConfigModal").style.display = "flex";
+}
 
+function closeUlbConfigModal() {
+  $("ulbConfigModal").style.display = "none";
+}
+
+function loadUlbConfig(ulbId) {
+  const isNew = ulbId === "new";
+  const cfg = isNew ? null : ULB_REGISTRY[ulbId];
+  
+  $("cfgUlbName").value = isNew ? "" : cfg.ULB_NAME;
+  $("cfgRateableRate").value = cfg?.TAX_RATES?.rateable || "";
+  $("cfgMaintenanceRate").value = cfg?.TAX_RATES?.maintenance || "";
+  
+  $("cfgF1").value = isNew ? "N/A" : (cfg.OPTIONS.ZONE || []).join(", ");
+  $("cfgF2").value = isNew ? "N/A" : (cfg.OPTIONS.BUILD || []).join(", ");
+  $("cfgF3").value = isNew ? "N/A" : (cfg.OPTIONS.YEAR || []).join(", ");
+  $("cfgF4").value = isNew ? "N/A" : (cfg.OPTIONS.OCCUPANCY || []).join(", ");
+  $("cfgF5").value = isNew ? "N/A" : (cfg.OPTIONS.USE || []).join(", ");
+}
+
+function saveUlbConfig() {
+  const ulbName = $("cfgUlbName").value.trim();
+  if (!ulbName) return showToast("ULB Name is required.", "warning");
+  
+  const selector = $("configUlbSelector");
+  const ulbId = selector.value === "new" ? ulbName.toLowerCase().replace(/[^a-z0-9]/g, "") : selector.value;
+  const parseList = (str) => str.split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
+  
+  ULB_REGISTRY[ulbId] = {
+    id: ulbId,
+    ULB_NAME: ulbName,
+    TAX_RATES: {
+      rateable: parseFloat($("cfgRateableRate").value) || 0,
+      maintenance: parseFloat($("cfgMaintenanceRate").value) || 0
+    },
+    OPTIONS: {
+      WARD: ULB_REGISTRY[ulbId]?.OPTIONS?.WARD || ["Ward 1"],
+      ZONE: parseList($("cfgF1").value) || ["N/A"],
+      BUILD: parseList($("cfgF2").value) || ["N/A"],
+      YEAR: parseList($("cfgF3").value) || ["N/A"],
+      OCCUPANCY: parseList($("cfgF4").value) || ["N/A"],
+      USE: parseList($("cfgF5").value) || ["N/A"]
+    }
+  };
+  
+  showToast(`${ulbName} configuration saved.`, "success");
+  
+  buildUlbMenu();
+  if (currentUlbFile === ulbId) {
+    refreshOptionsFromEngine();
+    buildTopGrid();
+    buildFloorGrid();
+  }
+  
+  closeUlbConfigModal();
+         }
 /* Application Boot
    Theme is applied immediately so the sign-in gate itself isn't a flash of
    the wrong color scheme. Everything else waits for bootApp(), which the
