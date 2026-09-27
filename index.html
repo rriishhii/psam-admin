@@ -5935,10 +5935,10 @@ function loadUlbConfig(ulbId) {
 async function saveUlbConfig() {
   const ulbName = $("cfgUlbName").value.trim();
   if (!ulbName) return showToast("ULB Name is required.", "warning");
-  
+
   const selector = $("configUlbSelector");
   const ulbId = selector.value === "new" ? ulbName.toLowerCase().replace(/[^a-z0-9]/g, "") : selector.value;
-  
+
   const newConfig = {
     id: ulbId,
     ULB_NAME: ulbName,
@@ -5958,19 +5958,22 @@ async function saveUlbConfig() {
 
   try {
     const pending = await showPendingToast("Saving configuration to cloud...");
+    
+    // Ensure this RPC exists in your Supabase instance to accept the JSON
     if (typeof LocalDB.rpc === "function") {
       await LocalDB.rpc("admin_save_ulb_config", { p_id: ulbId, p_config: newConfig });
     }
-    
+
     ULB_REGISTRY[ulbId] = newConfig;
     showToast(`${ulbName} configuration saved.`, "success", 3000, pending);
-    
+
     buildUlbMenu();
-    if (currentUlbFile === ulbId) {
-      refreshOptionsFromEngine();
-      buildTopGrid();
-      buildFloorGrid();
+    
+    // FIX: Automatically load the form if this is the active ULB OR if the app is currently empty
+    if (currentUlbFile === ulbId || !currentUlbFile) {
+      switchUlb(ulbId, !currentUlbFile);
     }
+    
     closeUlbConfigModal();
   } catch (e) {
     showToast("Failed to save configuration: " + e.message, "danger");
