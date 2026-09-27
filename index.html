@@ -1788,30 +1788,40 @@
           <input type="number" id="cfgMaintenanceRate" placeholder="e.g., 10" step="0.01">
         </div>
 
+        <!-- F1: Zone Rates -->
         <div class="login-field">
-          <label class="oc-field-label">F1: Zone Rates (Format: Option = Rate)</label>
-          <textarea id="cfgF1" rows="3" placeholder="A = 1.5, B = 1.0, C = 0.8, N/A = 1.0"></textarea>
+          <label class="oc-field-label">F1: Zone Rates</label>
+          <div id="cfgF1-container"></div>
+          <button type="button" class="page-btn" onclick="addFactorRow('cfgF1-container')" style="margin-top: 6px; padding: 4px 8px; font-size: 11px;">+ Add Zone Option</button>
         </div>
 
+        <!-- F2: Building Type Rates -->
         <div class="login-field">
-          <label class="oc-field-label">F2: Building Type Rates (Format: Option = Rate)</label>
-          <textarea id="cfgF2" rows="3" placeholder="PUCCA = 1.0, KUCHA = 0.5, N/A = 1.0"></textarea>
+          <label class="oc-field-label">F2: Building Type Rates</label>
+          <div id="cfgF2-container"></div>
+          <button type="button" class="page-btn" onclick="addFactorRow('cfgF2-container')" style="margin-top: 6px; padding: 4px 8px; font-size: 11px;">+ Add Building Option</button>
         </div>
 
+        <!-- F3: Age Factor Rates -->
         <div class="login-field">
-          <label class="oc-field-label">F3: Age Factor Rates (Format: Option = Rate)</label>
-          <textarea id="cfgF3" rows="3" placeholder="BEFORE 1970 = 0.5, 1971-1980 = 0.7"></textarea>
+          <label class="oc-field-label">F3: Age Factor Rates</label>
+          <div id="cfgF3-container"></div>
+          <button type="button" class="page-btn" onclick="addFactorRow('cfgF3-container')" style="margin-top: 6px; padding: 4px 8px; font-size: 11px;">+ Add Age Option</button>
         </div>
 
+        <!-- F5: Building Use Rates -->
         <div class="login-field">
-          <label class="oc-field-label">F5: Building Use Rates (Format: Option = Rate)</label>
-          <textarea id="cfgF5" rows="3" placeholder="HOTELS = 2.0, SHOPS = 1.5, N/A = 1.0"></textarea>
+          <label class="oc-field-label">F5: Building Use Rates</label>
+          <div id="cfgF5-container"></div>
+          <button type="button" class="page-btn" onclick="addFactorRow('cfgF5-container')" style="margin-top: 6px; padding: 4px 8px; font-size: 11px;">+ Add Use Option</button>
         </div>
 
+        <!-- F4: Occupancy Area Groups -->
         <div class="login-field" style="grid-column: span 2;">
-          <label class="oc-field-label">F4: Occupancy Area Groups (1 group per line)</label>
-          <div class="report-panel-note" style="margin: 0 0 4px 0; font-size: 11px;">Format: Group Name | Max Area | Rate &lt;= Max | Rate &gt; Max | Option 1, Option 2</div>
-          <textarea id="cfgF4" rows="4" placeholder="Residential | 50 | 1.0 | 1.5 | SELF RESIDENTIAL, LETOUT&#10;Commercial | 100 | 2.0 | 3.0 | SHOPS, HOTELS"></textarea>
+          <label class="oc-field-label">F4: Occupancy Area Groups</label>
+          <div class="report-panel-note" style="margin: 0 0 8px 0; font-size: 11px;">Fields: Group Name | Max Area | Rate &lt;= Max | Rate &gt; Max | Comma-Separated Options</div>
+          <div id="cfgF4-container"></div>
+          <button type="button" class="page-btn" onclick="addF4Row('cfgF4-container')" style="margin-top: 6px; padding: 4px 8px; font-size: 11px;">+ Add Occupancy Group</button>
         </div>
       </div>
     </div>
@@ -5883,11 +5893,64 @@ function openUlbConfigModal() {
 function closeUlbConfigModal() {
   $("ulbConfigModal").style.display = "none";
 }
+function addFactorRow(containerId, name = '', rate = 1.0) {
+  const container = $(containerId);
+  const row = document.createElement('div');
+  row.style.display = 'flex';
+  row.style.gap = '8px';
+  row.style.marginBottom = '6px';
+  row.innerHTML = `
+    <input type="text" placeholder="Option Name" value="${name}" class="config-opt-name" style="flex:2; height:28px; font-size:12px;">
+    <input type="number" step="0.01" placeholder="Rate" value="${rate}" class="config-opt-rate" style="flex:1; height:28px; font-size:12px;">
+    <button type="button" class="frow-remove-btn" onclick="this.parentElement.remove()" style="height:28px;">&times;</button>
+  `;
+  container.appendChild(row);
+}
 
-// Helper to convert structured objects back to text for the config UI
-const formatFactorList = (arr) => (arr || []).map(f => f.name ? `${f.name} = ${f.rate}` : `${f} = 1.0`).join(', ');
-const formatOccGroups = (arr) => (arr || []).map(g => g.group ? `${g.group} | ${g.limit} | ${g.rateBelow} | ${g.rateAbove} | ${(g.options || []).join(', ')}` : "").filter(Boolean).join('\n');
+function addF4Row(containerId, group='', limit=0, rateBelow=1.0, rateAbove=1.0, options='') {
+  const container = $(containerId);
+  const row = document.createElement('div');
+  row.style.display = 'flex';
+  row.style.gap = '6px';
+  row.style.marginBottom = '6px';
+  row.innerHTML = `
+    <input type="text" placeholder="Group Name" value="${group}" class="f4-group" style="width:20%; height:28px; font-size:12px;">
+    <input type="number" placeholder="Max Area" value="${limit}" class="f4-limit" style="width:15%; height:28px; font-size:12px;">
+    <input type="number" step="0.01" placeholder="Rate <=" value="${rateBelow}" class="f4-below" style="width:15%; height:28px; font-size:12px;">
+    <input type="number" step="0.01" placeholder="Rate >" value="${rateAbove}" class="f4-above" style="width:15%; height:28px; font-size:12px;">
+    <input type="text" placeholder="Options (comma separated)" value="${options}" class="f4-opts" style="width:30%; height:28px; font-size:12px;">
+    <button type="button" class="frow-remove-btn" onclick="this.parentElement.remove()" style="height:28px;">&times;</button>
+  `;
+  container.appendChild(row);
+}
 
+function getFactorListFromUI(containerId) {
+  const rows = $(containerId).children;
+  const result = [];
+  for(let row of rows) {
+     const name = row.querySelector('.config-opt-name').value.trim().toUpperCase();
+     const rate = parseFloat(row.querySelector('.config-opt-rate').value) || 1.0;
+     if(name) result.push({ name, rate });
+  }
+  return result.length ? result : [{name: "N/A", rate: 1.0}];
+}
+
+function getOccupancyGroupsFromUI(containerId) {
+  const rows = $(containerId).children;
+  const result = [];
+  for(let row of rows) {
+    const group = row.querySelector('.f4-group').value.trim().toUpperCase();
+    if (!group) continue;
+    result.push({
+      group: group,
+      limit: parseFloat(row.querySelector('.f4-limit').value) || 0,
+      rateBelow: parseFloat(row.querySelector('.f4-below').value) || 1.0,
+      rateAbove: parseFloat(row.querySelector('.f4-above').value) || 1.0,
+      options: row.querySelector('.f4-opts').value.split(',').map(o => o.trim().toUpperCase()).filter(Boolean)
+    });
+  }
+  return result;
+                                                                                                                       }
 function loadUlbConfig(ulbId) {
   const isNew = ulbId === "new";
   const cfg = isNew ? null : ULB_REGISTRY[ulbId];
@@ -5896,40 +5959,32 @@ function loadUlbConfig(ulbId) {
   $("cfgRateableRate").value = cfg?.TAX_RATES?.rateable || "";
   $("cfgMaintenanceRate").value = cfg?.TAX_RATES?.maintenance || "";
   
-  $("cfgF1").value = isNew ? "N/A = 1.0" : formatFactorList(cfg.OPTIONS.ZONE);
-  $("cfgF2").value = isNew ? "N/A = 1.0" : formatFactorList(cfg.OPTIONS.BUILD);
-  $("cfgF3").value = isNew ? "N/A = 1.0" : formatFactorList(cfg.OPTIONS.YEAR);
-  $("cfgF5").value = isNew ? "N/A = 1.0" : formatFactorList(cfg.OPTIONS.USE);
-  
-  // Handle fallback if old plain array data exists
+  // Clear existing rows
+  ['cfgF1-container', 'cfgF2-container', 'cfgF3-container', 'cfgF4-container', 'cfgF5-container'].forEach(id => {
+    $(id).innerHTML = '';
+  });
+
+  // Populate F1, F2, F3, F5
+  const populateFactors = (containerId, optionsList) => {
+    const opts = (isNew || !optionsList) ? [{name: "N/A", rate: 1.0}] : optionsList;
+    opts.forEach(opt => addFactorRow(containerId, opt.name, opt.rate));
+  };
+
+  populateFactors('cfgF1-container', cfg?.OPTIONS?.ZONE);
+  populateFactors('cfgF2-container', cfg?.OPTIONS?.BUILD);
+  populateFactors('cfgF3-container', cfg?.OPTIONS?.YEAR);
+  populateFactors('cfgF5-container', cfg?.OPTIONS?.USE);
+
+  // Populate F4
   const occData = cfg?.OPTIONS?.OCCUPANCY || [];
-  $("cfgF4").value = isNew ? "" : (occData[0]?.group ? formatOccGroups(occData) : `Legacy | 9999 | 1.0 | 1.0 | ${occData.join(', ')}`);
-}
-
-// Helpers to parse text into structured JSON arrays
-function parseFactorList(str) {
-  if (!str.trim()) return [{ name: "N/A", rate: 1.0 }];
-  return str.split(/[\n,]+/).map(s => {
-    let parts = s.split('=');
-    let name = parts[0] ? parts[0].trim().toUpperCase() : "";
-    let rate = parts.length > 1 ? parseFloat(parts[1]) || 1.0 : 1.0;
-    return name ? { name, rate } : null;
-  }).filter(Boolean);
-}
-
-function parseOccupancyGroups(str) {
-  if (!str.trim()) return [];
-  return str.split('\n').map(line => {
-    let parts = line.split('|');
-    if (parts.length < 5) return null;
-    return {
-      group: parts[0].trim().toUpperCase(),
-      limit: parseFloat(parts[1]) || 0,
-      rateBelow: parseFloat(parts[2]) || 1.0,
-      rateAbove: parseFloat(parts[3]) || 1.0,
-      options: parts[4].split(',').map(o => o.trim().toUpperCase()).filter(Boolean)
-    };
-  }).filter(Boolean);
+  if (isNew || !occData.length) {
+    addF4Row('cfgF4-container');
+  } else if (!occData[0]?.group) {
+    // Legacy fallback mapping
+    addF4Row('cfgF4-container', 'Legacy', 9999, 1.0, 1.0, occData.join(', '));
+  } else {
+    occData.forEach(g => addF4Row('cfgF4-container', g.group, g.limit, g.rateBelow, g.rateAbove, (g.options || []).join(', ')));
+  }
 }
 
 async function saveUlbConfig() {
@@ -5948,18 +6003,16 @@ async function saveUlbConfig() {
     },
     OPTIONS: {
       WARD: ULB_REGISTRY[ulbId]?.OPTIONS?.WARD || ["Ward 1"],
-      ZONE: parseFactorList($("cfgF1").value),
-      BUILD: parseFactorList($("cfgF2").value),
-      YEAR: parseFactorList($("cfgF3").value),
-      OCCUPANCY: parseOccupancyGroups($("cfgF4").value),
-      USE: parseFactorList($("cfgF5").value)
+      ZONE: getFactorListFromUI('cfgF1-container'),
+      BUILD: getFactorListFromUI('cfgF2-container'),
+      YEAR: getFactorListFromUI('cfgF3-container'),
+      OCCUPANCY: getOccupancyGroupsFromUI('cfgF4-container'),
+      USE: getFactorListFromUI('cfgF5-container')
     }
   };
 
   try {
     const pending = await showPendingToast("Saving configuration to cloud...");
-    
-    // Send to Supabase (Requires the SQL function added previously)
     if (typeof LocalDB.rpc === "function") {
       await LocalDB.rpc("admin_save_ulb_config", { p_id: ulbId, p_config: newConfig });
     }
@@ -5977,7 +6030,7 @@ async function saveUlbConfig() {
   } catch (e) {
     showToast("Failed to save configuration: " + e.message, "danger");
   }
-       }
+}
 /* Application Boot
    Theme is applied immediately so the sign-in gate itself isn't a flash of
    the wrong color scheme. Everything else waits for bootApp(), which the
