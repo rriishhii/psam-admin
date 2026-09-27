@@ -5994,6 +5994,17 @@ async function bootApp() {
   buildUlbMenu();
   updateAuthUI();
   startIdleWatch();
+
+  // Redirect to ULB config if the registry is empty
+  if (Object.keys(ULB_REGISTRY).length === 0) {
+    if (isAdminLoggedIn()) {
+      showToast("No ULB configured. Please create a new configuration to start.", "info", 6000);
+      openUlbConfigModal();
+    } else {
+      showToast("The system is not configured yet. Please ask an administrator to set up a ULB.", "warning", 10000);
+    }
+  }
+
   if (isAdminLoggedIn()) notifyPendingApprovals();
 }
 
