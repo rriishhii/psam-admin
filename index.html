@@ -2216,6 +2216,11 @@
   <div class="floor-wrap">
     <div class="floor-grid" id="floorGrid"></div>
     <div class="floor-level-actions" id="floorLevelActions"></div>
+    <!-- NEW: Total Tax Footer -->
+    <div id="taxFooter" style="display:none; justify-content: space-between; padding: 14px 16px; border-top: 1px solid var(--border); background: var(--surface-card); font-weight: 700; font-size: 15px; border-radius: 0 0 8px 8px;">
+      <span>Total Estimated Tax:</span>
+      <span id="totalTaxVal" style="color: var(--accent);">₹0.00</span>
+    </div>
   </div>
 
   <div class="edit-status clean" id="editStatus" role="status" aria-live="polite"></div>
@@ -2229,11 +2234,6 @@
     <button type="button" class="reset" onclick="handleResetClick()">Reset Form</button>
     <input type="file" id="batchMergeFile" accept=".json" style="display:none" onchange="handleBatchMergeFile(event)">
     <input type="file" id="importDatabaseFile" accept=".json,.txt,application/json,text/plain" style="display:none" onchange="handleImportDatabaseFile(event)">
-  </div>
-  
-  <!-- NEW: Live Tax Display -->
-  <div id="liveTaxDisplay" style="display: none; text-align: center; margin-top: 12px; font-size: 16px; font-weight: 700; color: var(--accent);">
-    Estimated Tax: ₹0.00
   </div>
   
   <div id="recordCount">Records saved: 0</div>
