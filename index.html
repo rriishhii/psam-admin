@@ -3109,10 +3109,18 @@ function handleYesNoChange(selectEl, p, idx) {
 
 const INR = new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+function canViewTax() {
+  return isAdminLoggedIn() || (currentUserProfile && currentUserProfile.can_view_tax);
+}
+
 function buildFloorGrid(){
+  const viewTax = canViewTax();
+  
   let html = `<div class="fth">Floor</div>`
-    + FLOOR_COLS.map(c => `<div class="fth">${c}</div>`).join("")
-    + `<div class="fth">Actions</div>`;
+    + FLOOR_COLS.map(c => `<div class="fth">${c}</div>`).join("");
+    
+  if (viewTax) html += `<div class="fth">Tax (₹)</div>`;
+  html += `<div class="fth">Actions</div>`;
 
   let visibleFloorCount = 0;
   activeFloors.forEach(([p,label]) => {
@@ -3165,18 +3173,34 @@ function buildFloorGrid(){
         html += `<div class="ftd ftd-remarks-spanning" data-floor-remarks="${p}" data-count="${count}" data-label="Remarks">${remField}</div>`;
       }
 
+      // --- INJECT TAX CELL ---
+      let taxCell = "";
+      if (viewTax) {
+        taxCell = `<div class="ftd" data-label="Tax (₹)" style="justify-content: flex-end; font-weight: 700; color: var(--accent);"><span id="tax_val_${p}__${idx}">₹0.00</span></div>`;
+      }
+
       const removeBtn = count > 1 ? `<button type="button" class="floor-remove" onclick="removeFloorEntry('${p}',${idx})" aria-label="Remove ${esc(label)} entry ${idx + 1} of ${count}">Remove</button>` : "";
       const addBtn = idx === count - 1 ? `<button type="button" class="floor-add" onclick="addFloorEntry('${p}')">+ Add</button>` : "";
-      html += `<div class="ftd ftd-actions" data-label="Actions">${removeBtn}${addBtn}</div>`;
+      html += `${taxCell}<div class="ftd ftd-actions" data-label="Actions">${removeBtn}${addBtn}</div>`;
       if (idx < count - 1) html += `<div class="sub-row-divider" aria-hidden="true"></div>`;
     });
   });
+
   $("floorGrid").innerHTML = (visibleFloorCount === 0)
     ? `<div class="floor-empty-hint">No floors added yet. Use "+ Add Floor" below to start.</div>`
     : html;
+    
   renderFloorLevelActions();
+  
+  // Toggle the visibility of the new total footer
+  const footer = $("taxFooter");
+  if (footer) footer.style.display = (viewTax && visibleFloorCount > 0) ? "flex" : "none";
+
   scheduleEditStateRefresh();
   try { Draft.schedule(); } catch (_) { /* Draft not ready yet */ }
+  
+  // Ensure the math calculates immediately upon render
+  if (viewTax) setTimeout(syncFloorDomToState, 0);
 }
 
 function syncFloorDomToState(){
@@ -3195,29 +3219,29 @@ function syncFloorDomToState(){
     }
   });
 
-  const taxDisplay = $("liveTaxDisplay");
-  const canViewTax = isAdminLoggedIn() || (currentUserProfile && currentUserProfile.can_view_tax);
+  // --- LIVE TAX CALCULATION & UI UPDATE ---
+  if (canViewTax() && window.UlbConfig) {
+    let totalTax = 0;
+    const rate = window.UlbConfig.TAX_RATES?.rateable || 1.0;
 
-  if (taxDisplay) {
-    if (canViewTax && window.UlbConfig) {
-      let totalTax = 0;
-      const rateableRate = window.UlbConfig.TAX_RATES?.rateable || 1.0;
-      
-      Object.values(floorEntries).forEach(floorRows => {
-        floorRows.forEach(entry => {
-          if (String(entry.yes_no).toLowerCase() === 'yes' && entry.area) {
-            const areaVal = parseFloat(entry.area) || 0;
-            totalTax += (areaVal * rateableRate);
-          }
-        });
+    Object.keys(floorEntries).forEach(p => {
+      floorEntries[p].forEach((entry, idx) => {
+        let rowTax = 0;
+        if (String(entry.yes_no).toLowerCase() === 'yes' && entry.area) {
+          rowTax = (parseFloat(entry.area) || 0) * rate;
+        }
+        totalTax += rowTax;
+        
+        // Update specific row cell
+        const cell = document.getElementById(`tax_val_${p}__${idx}`);
+        if (cell) cell.textContent = `₹${rowTax.toFixed(2)}`;
       });
-      
-      taxDisplay.style.display = "block";
-      taxDisplay.textContent = `Estimated Tax: ₹${totalTax.toFixed(2)}`;
-    } else {
-      taxDisplay.style.display = "none";
-    }
-  }
+    });
+
+    // Update footer total
+    const totalEl = document.getElementById("totalTaxVal");
+    if (totalEl) totalEl.textContent = `₹${totalTax.toFixed(2)}`;
+     }
 }
 
 function addFloorEntry(p){
@@ -3310,7 +3334,6 @@ function getComputedFloorColumnWidths() {
   ALL_FLOORS.forEach(([_, label]) => {
     maxFloorLabelWidth = Math.max(maxFloorLabelWidth, textWidth(label, fontLabel));
   });
-  // Cell chrome around the text: 10px left padding + 8px gap + 22px remove button + 8px right padding + 1px border, plus a little slack.
   const colFloorWidth = Math.ceil(maxFloorLabelWidth) + 56;
 
   const grid = $("floorGrid");
@@ -3331,7 +3354,13 @@ function getComputedFloorColumnWidths() {
   });
 
   const colActionsWidth = Math.max(140, Math.ceil(longestWordWidth("Actions", fontHeader, headerLetterSpacing)) + headerWordPad);
-  return [colFloorWidth, ...colDataWidths, colActionsWidth];
+  
+  // Conditionally add the width for the Tax column
+  const widths = [colFloorWidth, ...colDataWidths];
+  if (canViewTax()) widths.push(95); // 95px fixed width for Tax
+  widths.push(colActionsWidth);
+  
+  return widths;
 }
 
 function recalcFloorColumns(){
@@ -3349,7 +3378,8 @@ function recalcFloorColumns(){
   }
 
   const widths = getComputedFloorColumnWidths();
-  widths[7] = `minmax(${widths[7]}px, 1fr)`;
+  // The actions column is always the last item in the array
+  widths[widths.length - 1] = `minmax(${widths[widths.length - 1]}px, 1fr)`;
   grid.style.gridTemplateColumns = widths.map(w => typeof w === "number" ? `${w}px` : w).join(" ");
 }
 
