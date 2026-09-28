@@ -2227,10 +2227,15 @@
     <button type="button" class="ownercopy" id="ownerCopyBtn" style="display:none" onclick="openOwnerCopyModal()">Copy Owner Details</button>
     <button type="button" class="history" id="historyBtn" style="display:none" onclick="openHistoryModal()">View History</button>
     <button type="button" class="reset" onclick="handleResetClick()">Reset Form</button>
-    <!-- Hidden file inputs triggered via sidebar items -->
     <input type="file" id="batchMergeFile" accept=".json" style="display:none" onchange="handleBatchMergeFile(event)">
     <input type="file" id="importDatabaseFile" accept=".json,.txt,application/json,text/plain" style="display:none" onchange="handleImportDatabaseFile(event)">
   </div>
+  
+  <!-- NEW: Live Tax Display -->
+  <div id="liveTaxDisplay" style="display: none; text-align: center; margin-top: 12px; font-size: 16px; font-weight: 700; color: var(--accent);">
+    Estimated Tax: ₹0.00
+  </div>
+  
   <div id="recordCount">Records saved: 0</div>
 </form>
 </div>
@@ -3189,6 +3194,30 @@ function syncFloorDomToState(){
       }
     }
   });
+
+  const taxDisplay = $("liveTaxDisplay");
+  const canViewTax = isAdminLoggedIn() || (currentUserProfile && currentUserProfile.can_view_tax);
+
+  if (taxDisplay) {
+    if (canViewTax && window.UlbConfig) {
+      let totalTax = 0;
+      const rateableRate = window.UlbConfig.TAX_RATES?.rateable || 1.0;
+      
+      Object.values(floorEntries).forEach(floorRows => {
+        floorRows.forEach(entry => {
+          if (String(entry.yes_no).toLowerCase() === 'yes' && entry.area) {
+            const areaVal = parseFloat(entry.area) || 0;
+            totalTax += (areaVal * rateableRate);
+          }
+        });
+      });
+      
+      taxDisplay.style.display = "block";
+      taxDisplay.textContent = `Estimated Tax: ₹${totalTax.toFixed(2)}`;
+    } else {
+      taxDisplay.style.display = "none";
+    }
+  }
 }
 
 function addFloorEntry(p){
@@ -5255,14 +5284,19 @@ async function submitAuthGate() {
 }
 
 async function fetchOrCreateUserProfile(user) {
-  // A database trigger creates the profile (always as field_staff) when the account is created.
   for (let i = 0; i < 3; i++) {
-    const res = await sb.from("profiles").select("email,role,active").eq("id", user.id).maybeSingle();
+    const res = await sb.from("profiles").select("email,role,active,can_view_tax").eq("id", user.id).maybeSingle();
     if (res.error) throw new Error(res.error.message);
-    if (res.data) return { uid: user.id, email: res.data.email || user.email, role: res.data.role === "admin" ? "admin" : "field_staff", active: res.data.active === true };
+    if (res.data) return { 
+      uid: user.id, 
+      email: res.data.email || user.email, 
+      role: res.data.role === "admin" ? "admin" : "field_staff", 
+      active: res.data.active === true,
+      can_view_tax: res.data.can_view_tax === true
+    };
     await new Promise(r => setTimeout(r, 600));
   }
-  return { uid: user.id, email: user.email, role: "field_staff", active: false };
+  return { uid: user.id, email: user.email, role: "field_staff", active: false, can_view_tax: false };
 }
 
 // Supabase must not be called from inside its own auth callback, so the work is deferred.
@@ -5330,8 +5364,7 @@ async function openManageUsersModal() {
   listEl.innerHTML = "Loading…";
   $("manageUsersModal").style.display = "flex";
   try {
-    const data = LocalDB._ok(await sb.from("profiles").select("id,email,role,active,created_at").order("created_at", { ascending: true }));
-    // People waiting for approval come first.
+    const data = LocalDB._ok(await sb.from("profiles").select("id,email,role,active,created_at,can_view_tax").order("created_at", { ascending: true }));
     const rows = data.slice().sort((x, y) => (x.active === y.active ? 0 : x.active ? 1 : -1));
     listEl.innerHTML = rows.map(u => {
       const me = u.id === currentUserProfile.uid;
@@ -5341,6 +5374,10 @@ async function openManageUsersModal() {
         <div style="min-width:0; flex:1 1 auto;">
           <div style="font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(u.email || u.id)}</div>
           <div class="report-panel-note" style="margin:0; white-space:nowrap;">${status}</div>
+          <label style="font-size: 11px; display: flex; align-items: center; gap: 4px; margin-top: 4px; cursor: pointer;">
+            <input type="checkbox" ${u.can_view_tax ? "checked" : ""} onchange="setUserAccess('${esc(u.id)}', { can_view_tax: this.checked })" ${me || !u.active ? "disabled" : ""}>
+            Allow Viewing Tax
+          </label>
         </div>
         <select onchange="setUserAccess('${esc(u.id)}', { role: this.value })" ${me || !u.active ? "disabled" : ""} style="flex-shrink:0; width:auto;">
           <option value="field_staff" ${u.role !== "admin" ? "selected" : ""}>Field Staff</option>
