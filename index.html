@@ -2667,6 +2667,10 @@ function refreshOptionsFromEngine() {
   const extractNames = (arr) => (arr || []).map(f => typeof f === 'object' ? f.name : f).filter(Boolean);
 
   WARD = window.UlbConfig?.OPTIONS?.WARD || [];
+  
+  // --- NEW: Filter the wards based on user permissions ---
+  const allowedWards = WARD.filter(isWardAllowed);
+
   ZONE = extractNames(window.UlbConfig?.OPTIONS?.ZONE) || ["N/A"];
   BUILD = extractNames(window.UlbConfig?.OPTIONS?.BUILD) || ["N/A"];
   YEAR = extractNames(window.UlbConfig?.OPTIONS?.YEAR) || ["N/A"];
@@ -2685,7 +2689,8 @@ function refreshOptionsFromEngine() {
   let USE = extractNames(window.UlbConfig?.OPTIONS?.USE) || ["N/A"];
 
   TOP_FIELDS = [
-    ["ward", { label: "Ward", required: true, spanClass: "col-third", options: WARD, helper: "Select ward number" }],
+    // --- NEW: Use allowedWards instead of WARD here ---
+    ["ward", { label: "Ward", required: true, spanClass: "col-third", options: allowedWards, helper: "Select ward number" }],
     ["gis_id", { label: "GIS ID", caps: true, maxlength: 40, required: true, withNavButtons: true, spanClass: "col-third", helper: "Unique GIS identifier (press Enter to View)" }],
     ["old_house_no", { label: "Old House No", caps: true, maxlength: 40, spanClass: "col-third", helper: "ULB house registration number" }],
     ["owner_name", { label: "Owner Name", caps: true, maxlength: 100, spanClass: "col-half", helper: "Full name as per official records" }],
@@ -3044,6 +3049,14 @@ const INR = new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFr
 
 function canViewTax() {
   return isAdminLoggedIn() || (currentUserProfile && currentUserProfile.can_view_tax);
+}
+function isWardAllowed(ward) {
+  if (isAdminLoggedIn()) return true;
+  const assigned = currentUserProfile?.assigned_wards || [];
+  if (assigned.length === 0) return true; // Leave blank in settings to allow all wards
+  
+  // Check if the requested ward matches any of their assigned wards
+  return assigned.map(norm).includes(norm(ward));
 }
 
 function buildFloorGrid(){
@@ -3581,6 +3594,11 @@ async function searchRecord() {
     return showToast("Please enter both Ward and GIS ID to view.", "warning");
   }
 
+  // --- NEW: Block unauthorized ward access ---
+  if (!isWardAllowed(wardInput)) {
+    return showToast("You do not have permission to view or edit properties in this ward.", "danger");
+  }
+
   const pending = await showPendingToast("Searching...");
   const record = await RelationalDB.getRecord(wardInput, gisInput, currentUlbFile);
 
@@ -3616,6 +3634,9 @@ async function persistImpl(mode, ctx = {}) {
   const record = readFormRecord();
   const ward = record.ward;
   const gis = record.gis_id;
+  if (!isWardAllowed(ward)) {
+    return showToast("You do not have permission to save properties in this ward.", "danger");
+  }
 
   try {
     if (mode === "save") {
@@ -4673,18 +4694,19 @@ async function submitAuthGate() {
 
 async function fetchOrCreateUserProfile(user) {
   for (let i = 0; i < 3; i++) {
-    const res = await sb.from("profiles").select("email,role,active,can_view_tax").eq("id", user.id).maybeSingle();
+    const res = await sb.from("profiles").select("email,role,active,can_view_tax,assigned_wards").eq("id", user.id).maybeSingle();
     if (res.error) throw new Error(res.error.message);
     if (res.data) return { 
       uid: user.id, 
       email: res.data.email || user.email, 
       role: res.data.role === "admin" ? "admin" : "field_staff", 
       active: res.data.active === true,
-      can_view_tax: res.data.can_view_tax === true
+      can_view_tax: res.data.can_view_tax === true,
+      assigned_wards: res.data.assigned_wards || []
     };
     await new Promise(r => setTimeout(r, 600));
   }
-  return { uid: user.id, email: user.email, role: "field_staff", active: false, can_view_tax: false };
+  return { uid: user.id, email: user.email, role: "field_staff", active: false, can_view_tax: false, assigned_wards: [] };
 }
 
 // Supabase must not be called from inside its own auth callback, so the work is deferred.
@@ -4758,20 +4780,32 @@ async function openManageUsersModal() {
       const me = u.id === currentUserProfile.uid;
       const status = me ? "This is you" : u.active ? "Active" : "Waiting for approval";
       return `
-      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px; border:1px solid ${u.active ? "var(--border)" : "var(--warning, #d97706)"}; border-radius:8px;">
-        <div style="min-width:0; flex:1 1 auto;">
+      <div style="display:flex; flex-direction:column; gap:8px; padding:10px; border:1px solid ${u.active ? "var(--border)" : "var(--warning, #d97706)"}; border-radius:8px; background: var(--surface-card); margin-bottom: 6px;">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
           <div style="font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(u.email || u.id)}</div>
-          <div class="report-panel-note" style="margin:0; white-space:nowrap;">${status}</div>
-          <label style="font-size: 11px; display: flex; align-items: center; gap: 4px; margin-top: 4px; cursor: pointer;">
+          <button type="button" class="page-btn ${u.active ? "page-btn-danger" : ""}" ${me ? "disabled" : ""} onclick="setUserAccess('${esc(u.id)}', { active: ${!u.active} })">${u.active ? "Disable" : "Approve"}</button>
+        </div>
+        
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+          <select onchange="setUserAccess('${esc(u.id)}', { role: this.value })" ${me || !u.active ? "disabled" : ""} style="width:130px; height:30px; font-size:12px;">
+            <option value="field_staff" ${u.role !== "admin" ? "selected" : ""}>Field Staff</option>
+            <option value="admin" ${u.role === "admin" ? "selected" : ""}>Admin</option>
+          </select>
+          
+          <label style="font-size: 11.5px; display: flex; align-items: center; gap: 4px; cursor: pointer;">
             <input type="checkbox" ${u.can_view_tax ? "checked" : ""} onchange="setUserAccess('${esc(u.id)}', { can_view_tax: this.checked })" ${me || !u.active ? "disabled" : ""}>
-            Allow Viewing Tax
+            View Tax
           </label>
         </div>
-        <select onchange="setUserAccess('${esc(u.id)}', { role: this.value })" ${me || !u.active ? "disabled" : ""} style="flex-shrink:0; width:auto;">
-          <option value="field_staff" ${u.role !== "admin" ? "selected" : ""}>Field Staff</option>
-          <option value="admin" ${u.role === "admin" ? "selected" : ""}>Admin</option>
-        </select>
-        <button type="button" class="page-btn ${u.active ? "page-btn-danger" : ""}" ${me ? "disabled" : ""} onclick="setUserAccess('${esc(u.id)}', { active: ${!u.active} })">${u.active ? "Disable" : "Approve"}</button>
+
+        <div style="margin-top: 4px;">
+          <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary);">Assigned Wards (Comma-separated, leave blank for all):</label>
+          <input type="text" placeholder="e.g., Ward 1, Ward 2" 
+            value="${esc((u.assigned_wards || []).join(', '))}" 
+            onchange="setUserAccess('${esc(u.id)}', { assigned_wards: this.value.split(',').map(s => s.trim()).filter(Boolean) })"
+            ${me || !u.active || u.role === 'admin' ? "disabled" : ""}
+            style="width: 100%; height: 32px; font-size: 12.5px; margin-top: 4px;">
+        </div>
       </div>`;
     }).join("") || "No users yet.";
   } catch (e) {
