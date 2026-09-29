@@ -1650,6 +1650,8 @@
          Clear All Data: admin only, listed last as the most destructive action. -->
     <div class="sidebar-nav-list">
       <p class="sidebar-section-title admin-only-nav">Database</p>
+     <button type="button" class="history" onclick="document.getElementById('legacyMigrateFile').click()">Migrate Legacy JSON</button>
+     <input type="file" id="legacyMigrateFile" accept=".json" style="display:none" onchange="runLegacyMigration(event)">
      <button type="button" class="sidebar-btn admin-only-nav" onclick="toggleSidebar(false); openUlbConfigModal();">
         <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .43-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.49-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
         Tax & ULB Configuration
@@ -3628,7 +3630,6 @@ async function persistImpl(mode, ctx = {}) {
       await RelationalDB.saveRecord(record, false);
       showToast(`Record saved successfully!`, "success", 3000, ctx.pending);
 
-    // Inside persistImpl, replace the `else` block (the update logic) with this:
     } else {
       if (editingIndex === -1) return showToast("Please load a record first.", "warning");
       if (hasIdentityChanged()) return showToast("Ward or GIS ID was changed. Please click 'View' to load a record.", "warning");
@@ -4128,7 +4129,7 @@ function logTimestamp(e) {
   return parseTimestamp(e.at);
 }
 
-async function openAllHistoryModal() {async function openAllHistoryModal() {
+async function openAllHistoryModal() {
   if (!ensureAdminAccess(openAllHistoryModal)) return;
   
   const { data: logs, error } = await sb.from('property_audit_logs')
@@ -5621,6 +5622,52 @@ $("form").addEventListener("change", scheduleEditStateRefresh);
 window.addEventListener("beforeunload", e => {
   if (hasUnsavedChanges()) { e.preventDefault(); e.returnValue = ""; }
 });
+async function runLegacyMigration(evt) {
+  const file = evt.target.files[0];
+  evt.target.value = "";
+  if (!file) return;
+
+  if (!confirm("Start migrating this legacy JSON file into the new relational Supabase tables?")) return;
+
+  const reader = new FileReader();
+  reader.onload = async () => {
+    try {
+      const parsed = JSON.parse(reader.result);
+      const records = Array.isArray(parsed) ? parsed : (parsed.records || []);
+      
+      if (!records.length) return showToast("No records found in this file.", "warning");
+
+      const pending = await showPendingToast(`Migrating ${records.length} records... Please wait.`);
+      let successCount = 0;
+      let errorCount = 0;
+
+      for (const rec of records) {
+        try {
+          // RelationalDB.saveRecord already contains the exact logic to split 
+          // nested floors into the property_floors table using entry_index.
+          await RelationalDB.saveRecord(rec, true);
+          successCount++;
+        } catch (e) {
+          console.error("Failed to migrate record:", rec.gis_id, e);
+          errorCount++;
+        }
+      }
+
+      pending.end();
+      updateRecordCount();
+      
+      if (errorCount > 0) {
+        showToast(`Migration finished. ${successCount} imported, ${errorCount} failed. Check console for errors.`, "warning", 10000);
+      } else {
+        showToast(`Successfully migrated all ${successCount} records!`, "success", 8000);
+      }
+      
+    } catch (err) {
+      showToast("Migration failed: " + err.message, "danger");
+    }
+  };
+  reader.readAsText(file);
+}
 </script>
 </body>
 </html>
