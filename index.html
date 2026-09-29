@@ -5716,7 +5716,7 @@ window.addEventListener("beforeunload", e => {
 });
 for (const rec of records) {
         try {
-          await RelationalDB.saveRecord(rec, true);
+          async await RelationalDB.saveRecord(rec, true);
 
           // Migrate past audit history if present in the legacy record
           if (rec.change_log && Array.isArray(rec.change_log)) {
