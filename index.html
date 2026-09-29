@@ -2323,105 +2323,103 @@ const LocalDB = {
    saveAll only writes/deletes records THIS session knew about, so it cannot wipe
    records another user added meanwhile.
 ========================================================================== */
-const DB = {
-  _cache: null,
-  _known: null,
-  _listeners: [],
+const RelationalDB = {
+  // Fetch a single property and its nested floors
+  async getRecord(ward, gis, ulbId) {
+    const { data, error } = await sb.from('properties')
+      .select('*, property_floors(*)')
+      .eq('ulb_id', ulbId)
+      .eq('ward', ward)
+      .eq('gis_id', gis)
+      .maybeSingle();
 
-  _idsFor(records) {
-    const seen = new Map();
-    return records.map(r => {
-      const base = (recordUlbFile(r) + "~" + norm(r.ward) + "~" + norm(r.gis_id)).replace(/[\/\s]+/g, "_");
-      const n = seen.get(base) || 0;
-      seen.set(base, n + 1);
-      return (base + "~" + n).slice(0, 1400);
-    });
-  },
+    if (error || !data) return null;
 
-  open() { return LocalDB.open(); },
+    // Reconstruct the frontend object structure expected by the form
+    const record = {
+      ward: data.ward, gis_id: data.gis_id, old_house_no: data.old_house_no || "",
+      owner_name: data.owner_name || "", father_husband_name: data.father_husband_name || "",
+      address: data.address || "", mobile_no: data.mobile_no || "",
+      open_plot_area: data.open_plot_area || "", remarks: data.remarks || "",
+      saved_date: data.saved_date, updated_date: data.updated_date,
+      floors: {}
+    };
 
-  onChange(fn) { this._listeners.push(fn); },
-  _notify() { this._listeners.forEach(fn => { try { fn(); } catch (_) {} }); },
-
-  _base(ulb, ward, gis) { return (ulb + "~" + norm(ward) + "~" + norm(gis)).replace(/[\/\s]+/g, "_"); },
-
-  // Admin: every record. Staff: only the "working set" of properties they have looked up or saved this session.
-  async getAll() {
-    if (this._cache) return this._cache.slice();
-    if (!isAdminLoggedIn()) { this._cache = []; this._known = new Map(); return []; }
-    try {
-      const entries = await LocalDB.getAll("records");
-      entries.sort((a, b) => (a.o || 0) - (b.o || 0));
-      this._known = new Map(entries.map(en => [en.id, { o: en.o || 0, s: JSON.stringify(en.r) }]));
-      this._cache = entries.map(en => en.r);
-      return this._cache.slice();
-    } catch (e) {
-      console.error("Cloud database read failed:", e);
-      showToast("Could not load records: " + e.message, "danger");
-      return [];
-    }
-  },
-
-  // Staff lookup: the server returns just the matching property, which joins the working set.
-  async fetchOne(ward, gis, ulb) {
-    await this.getAll();
-    const rows = await LocalDB.getRecord(this._base(ulb, ward, gis));
-    rows.forEach(j => {
-      let en; try { en = JSON.parse(j); } catch (_) { return; }
-      const s = JSON.stringify(en.r), old = this._known.get(en.id);
-      if (old) { const i = this._cache.findIndex(r => JSON.stringify(r) === old.s); if (i !== -1) this._cache[i] = en.r; else this._cache.push(en.r); }
-      else this._cache.push(en.r);
-      this._known.set(en.id, { o: en.o || 0, s });
-    });
-    return rows.length;
-  },
-
-  async saveAll(records, opts = {}) {
-    try {
-      if (!this._known) await this.getAll();
-      if (!this._known) throw new Error("records could not be loaded from the cloud database");
-      const admin = isAdminLoggedIn();
-      const known = this._known;
-      const ids = this._idsFor(records);
-      const keep = new Set(ids);
-      let maxOrder = 0;
-      known.forEach(v => { if (v.o > maxOrder) maxOrder = v.o; });
-
-      const rows = [], next = new Map();
-      records.forEach((r, i) => {
-        const id = ids[i], k = known.get(id), s = JSON.stringify(r);
-        const o = k ? k.o : ++maxOrder;
-        // Staff may only insert new keys or update ones they already loaded; the server enforces this too.
-        if (!k || k.s !== s || k.o !== o) rows.push({ k: id, j: JSON.stringify({ id, o, r }), mode: admin ? (opts.bulk ? "bulk" : "upsert") : (k ? "update" : "insert") });
-        next.set(id, { o, s });
+    if (data.property_floors) {
+      data.property_floors.forEach(f => {
+        if (!record.floors[f.floor_name]) record.floors[f.floor_name] = [];
+        record.floors[f.floor_name][f.entry_index] = {
+          yes_no: f.yes_no || "No",
+          zone: f.zone || "N/A",
+          building_type: f.building_type || "N/A",
+          year: f.year_of_construction || "N/A",
+          occupancy: f.occupancy || "N/A",
+          area: f.area || "",
+          remarks: f.remarks || ""
+        };
       });
-      await LocalDB.writeRecords(rows);
-      if (admin) {
-        const toDelete = [];
-        known.forEach((v, id) => { if (!keep.has(id)) toDelete.push(id); });
-        await LocalDB.deleteKeys("records", toDelete);
-      }
-
-      this._known = next;
-      this._cache = records.slice();
-      this._notify();
-      try { BackupGuard.noteChange(); } catch (_) { /* backup tracking is best-effort */ }
-      return true;
-    } catch (e) {
-      console.error("Cloud database save failed:", e);
-      showToast("Save failed: " + e.message, "danger");
-      return false;
     }
+    return record;
   },
 
-  async clear() {
-    try {
-      await LocalDB.clearStore("records");
-      this._cache = [];
-      this._known = new Map();
-      this._notify();
-      return true;
-    } catch (e) { console.error("Cloud database clear failed:", e); return false; }
+  // Upsert the property and replace its associated floors
+  async saveRecord(record, isUpdate = false) {
+    const { data: propData, error: propErr } = await sb.from('properties').upsert({
+      ulb_id: record.ulb_file || currentUlbFile,
+      ward: record.ward,
+      gis_id: record.gis_id,
+      old_house_no: record.old_house_no,
+      owner_name: record.owner_name,
+      father_husband_name: record.father_husband_name,
+      address: record.address,
+      mobile_no: record.mobile_no,
+      open_plot_area: parseFloat(record.open_plot_area) || null,
+      remarks: record.remarks,
+      updated_date: isUpdate ? new Date().toISOString() : null
+    }, { onConflict: 'ulb_id, ward, gis_id' }).select('id').single();
+
+    if (propErr) throw propErr;
+
+    const floorInserts = [];
+    Object.keys(record.floors || {}).forEach(floorName => {
+      record.floors[floorName].forEach((entry, idx) => {
+        floorInserts.push({
+          property_id: propData.id,
+          floor_name: floorName,
+          entry_index: idx,
+          yes_no: entry.yes_no,
+          zone: entry.zone,
+          building_type: entry.building_type,
+          year_of_construction: entry.year,
+          occupancy: entry.occupancy,
+          area: parseFloat(entry.area) || null,
+          remarks: entry.remarks
+        });
+      });
+    });
+
+    // Delete old floors and insert the new array
+    await sb.from('property_floors').delete().eq('property_id', propData.id);
+    if (floorInserts.length > 0) {
+      const { error: floorErr } = await sb.from('property_floors').insert(floorInserts);
+      if (floorErr) throw floorErr;
+    }
+    return true;
+  },
+
+  async deleteRecord(ward, gis, ulbId) {
+    const { error } = await sb.from('properties')
+      .delete()
+      .eq('ulb_id', ulbId).eq('ward', ward).eq('gis_id', gis);
+    if (error) throw error;
+    return true;
+  },
+
+  async getCount(ulbId) {
+    const { count } = await sb.from('properties')
+      .select('*', { count: 'exact', head: true })
+      .eq('ulb_id', ulbId);
+    return count || 0;
   }
 };
 
@@ -3639,28 +3637,105 @@ async function loadRecordByIndex(idx, recs = null, ulbListHint = null) {
   return true;
 }
 
-async function searchRecord(){
-  const wardInput = normalizeWard($("ward").value.trim()), gisInput = $("gis_id").value.trim();
-  if (wardInput && gisInput && !isAdminLoggedIn()) {   // staff: ask the server for just this property
-    try { await DB.fetchOne(wardInput, gisInput, currentUlbFile); }
-    catch (e) { return showToast("Could not search: " + e.message, "danger"); }
-  }
-  const recs = await DB.getAll();
-  const ulbList = ulbRecords(recs);
+async function searchRecord() {
+  const wardInput = normalizeWard($("ward").value.trim());
+  const gisInput = $("gis_id").value.trim();
 
-  if (!ulbList.length) return showToast(isAdminLoggedIn() ? `No records saved yet for ${currentUlbName}.` : `Record not found for ${wardInput} and GIS ID ${gisInput}.`, "warning");
   if (!wardInput || !gisInput) {
     if (!wardInput) $("ward").focus();
     else $("gis_id").focus();
     return showToast("Please enter both Ward and GIS ID to view.", "warning");
   }
 
-  const idx = findIndex(recs, wardInput, gisInput);
-  if (idx === -1) {
+  const pending = await showPendingToast("Searching...");
+  const record = await RelationalDB.getRecord(wardInput, gisInput, currentUlbFile);
+
+  if (!record) {
+    pending.end();
     return showToast(`Record not found for ${wardInput} and GIS ID ${gisInput}.`, "warning");
   }
 
-  return loadRecordByIndex(idx, recs);
+  if (!confirmDiscardChanges("load another record")) {
+    pending.end();
+    return false;
+  }
+
+  fillForm(record);
+  editingIndex = 1; // Treated as a boolean flag for edit mode
+  $("saveBtn").style.display = "none";
+  if (isEngineLoaded) {
+    $("updateBtn").style.display = "inline-block";
+    $("deleteBtn").style.display = isAdminLoggedIn() ? "inline-block" : "none";
+  }
+  
+  setEditBaseline();
+  refreshEditState();
+  showToast(`Viewing Record (${record.ward} / GIS ID ${record.gis_id})`, "info", 3000, pending);
+  return true;
+}
+
+async function persistImpl(mode, ctx = {}) {
+  if (!isEngineLoaded) return showToast("ULB configuration is unavailable. Action disabled.", "danger");
+  if (!validateFormInputs()) return;
+
+  syncFloorDomToState();
+  const record = readFormRecord();
+  const ward = record.ward;
+  const gis = record.gis_id;
+
+  try {
+    if (mode === "save") {
+      if (editingIndex !== -1) return showToast("A record is loaded. Use Update Record, or Reset Form to start a new entry.", "warning");
+      
+      const existing = await RelationalDB.getRecord(ward, gis, currentUlbFile);
+      if (existing) {
+        return showToast(`${ward} and GIS ID ${gis} already exists. Click 'View' to load it.`, "warning");
+      }
+      
+      ctx.pending = await showPendingToast("Saving record…");
+      await RelationalDB.saveRecord(record, false);
+      showToast(`Record saved successfully!`, "success", 3000, ctx.pending);
+
+    } else {
+      if (editingIndex === -1) return showToast("Please load a record first.", "warning");
+      if (hasIdentityChanged()) return showToast("Ward or GIS ID was changed. Please click 'View' to load a record.", "warning");
+      if (!hasUnsavedChanges()) return showToast("No changes to update.", "info");
+
+      ctx.pending = await showPendingToast("Updating record…");
+      await RelationalDB.saveRecord(record, true);
+      showToast(`Record updated successfully!`, "success", 3000, ctx.pending);
+    }
+
+    updateRecordCount();
+    resetFormMode();
+    $("ward")?.focus();
+  } catch (err) {
+    console.error(err);
+    if (ctx.pending) ctx.pending.end();
+    showToast("Database error: " + err.message, "danger");
+  }
+}
+
+async function deleteRecord() {
+  if (!ensureAdminAccess(deleteRecord)) return;
+  if (!isEngineLoaded) return showToast("ULB configuration is unavailable. Action disabled.", "danger");
+  if (editingIndex === -1) return showToast("Please load a record first.", "warning");
+
+  const ward = normalizeWard($("ward").value.trim());
+  const gis = $("gis_id").value.trim();
+
+  if (!confirm(`Permanently delete record: ${ward}, GIS ID ${gis}?`)) return;
+
+  const pending = await showPendingToast("Deleting record…");
+  try {
+    await RelationalDB.deleteRecord(ward, gis, currentUlbFile);
+    updateRecordCount();
+    resetFormMode();
+    showToast(`Record deleted: ${ward}, GIS ID ${gis}`, "danger", 3000, pending);
+  } catch (err) {
+    pending.end();
+    showToast("Delete failed: " + err.message, "danger");
+  }
 }
 
 async function navigateGisRecord(direction) {
@@ -4155,83 +4230,6 @@ async function persist(mode){
   _persistBusy = true;
   const ctx = {};
   try { await persistImpl(mode, ctx); } finally { _persistBusy = false; ctx.pending?.end(); }
-}
-
-async function persistImpl(mode, ctx = {}){
-  if (!isEngineLoaded) return showToast("ULB configuration is unavailable. Action disabled.", "danger");
-
-  if (!validateFormInputs()) return;
-
-  const recs = await DB.getAll();
-  syncFloorDomToState();
-  const record = readFormRecord();
-
-  if (mode === "save") {
-    if (editingIndex !== -1) return showToast("A record is loaded. Use Update Record, or Reset Form to start a new entry.", "warning");
-    const ward = normalizeWard($("ward").value.trim());
-    const gis = $("gis_id").value.trim();
-    if (findIndex(recs, ward, gis) !== -1) {
-      return showToast(`${ward} and GIS ID ${gis} already exists. Click 'View' to load it.`, "warning");
-    }
-    record.saved_date = new Date().toLocaleString("en-IN");
-    recs.push(record);
-    ctx.pending = await showPendingToast("Saving record…");
-    if (!await DB.saveAll(recs)) return;
-    showToast(`Record saved successfully for ${currentUlbName}!`, "success", 3000, ctx.pending);
-  } else {
-    if (editingIndex === -1) return showToast("Please load a record first.", "warning");
-
-    // Guard against mismatched updates if identity changed
-    if (hasIdentityChanged()) {
-      return showToast("Ward or GIS ID was changed. Please click 'View' to load a record.", "warning");
-    }
-
-    if (!hasUnsavedChanges()) return showToast("No changes to update.", "info");
-
-    // Maintain ward & gis_id immutability from original record
-    record.ward = recs[editingIndex].ward;
-    record.gis_id = recs[editingIndex].gis_id;
-
-    // Strictly preserve saved_date without creating or overwriting on update
-    record.saved_date = recs[editingIndex]?.saved_date || "";
-    record.updated_date = new Date().toLocaleString("en-IN");
-
-    withChangeLog(recs[editingIndex], record, restoreSource || "Form");
-    recs[editingIndex] = record;
-    ctx.pending = await showPendingToast("Updating record…");
-    if (!await DB.saveAll(recs)) return;
-    showToast(`Record updated successfully!`, "success", 3000, ctx.pending);
-  }
-
-  updateRecordCount();
-  resetFormMode();
-  $("ward")?.focus();
-}
-
-async function deleteRecord() {
-  if (!ensureAdminAccess(deleteRecord)) return;
-  if (!isEngineLoaded) return showToast("ULB configuration is unavailable. Action disabled.", "danger");
-  if (editingIndex === -1) return showToast("Please load a record first.", "warning");
-  const recs = await DB.getAll();
-  const rec = recs[editingIndex];
-  if (!rec) return showToast("Record not found.", "danger");
-
-  if (!confirm(`Delete record: ${rec.ward}, GIS ID ${rec.gis_id} (${recordUlbFile(rec) === currentUlbFile ? currentUlbName : (rec.ulb_name || "Unknown ULB")})?\n\nIt will be kept in the Recycle Bin for ${Trash.RETENTION_DAYS} days.`)) return;
-
-  const tid = await Trash.add(rec);
-  if (!tid && !confirm("Couldn't keep a copy of this record in the Recycle Bin, so it could not be restored later.\n\nDelete it anyway?")) return;
-
-  recs.splice(editingIndex, 1);
-  const pending = await showPendingToast("Deleting record…");
-  if (!await DB.saveAll(recs)) {
-    pending.end();
-    if (tid) await Trash.remove(tid);
-    return;
-  }
-
-  updateRecordCount();
-  resetFormMode();
-  showToast(`Record deleted: ${rec.ward}, GIS ID ${rec.gis_id}${tid ? " (in the Recycle Bin)" : ""}`, "danger", 3000, pending);
 }
 
 async function clearAllData() {
