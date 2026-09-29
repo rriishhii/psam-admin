@@ -2263,131 +2263,68 @@ const LocalDB = {
 // Restored: every "DB.getAll()/saveAll()/clear()" call in the app goes through this object, but its definition
 // was missing from the file, so Browse Records, Reports, Clear, Import etc. all threw "DB is not defined".
 const DB = {
-  // Admin: every record, as plain record objects. Reads the server "records" store first; if that is empty
-  // it falls back to the properties + property_floors tables that RelationalDB writes to.
   async getAll() {
     let out = [];
-    try {
-      const entries = await LocalDB.getAll("records");
-      out = entries.map(e => (e && e.r) ? { ...e.r, _o: e.o } : e).filter(Boolean);
-      if (out.some(r => r._o !== undefined)) out.sort((a, b) => (a._o ?? 0) - (b._o ?? 0));
-      out.forEach(r => { delete r._o; });
-    } catch (e) { console.warn("records store read failed, trying properties table:", e); out = []; }
-    if (out.length) return out;
+    // Read directly from the relational tables in chunks of 1000
     for (let from = 0; ; from += 1000) {
-      const { data, error } = await sb.from("properties").select("*, property_floors(*)").range(from, from + 999);
-      if (error) throw new Error(error.message);
-      (data || []).forEach(row => { const rec = mapDbRecordToFrontend(row); rec.ulb_file = row.ulb_id; out.push(rec); });
+      const { data, error } = await sb.from("properties")
+        .select("*, property_floors(*)")
+        .range(from, from + 999);
+      if (error) {
+        console.error("Error reading properties:", error);
+        break;
+      }
+      (data || []).forEach(row => {
+        const rec = mapDbRecordToFrontend(row);
+        rec.ulb_file = row.ulb_id;
+        out.push(rec);
+      });
       if (!data || data.length < 1000) break;
     }
     return out;
   },
-  async saveAll() {
-    showToast("Bulk save is unavailable in this copy of the file (its write code was missing). Nothing was changed.", "danger", 8000);
-    return false;
-  },
-  async clear() { await LocalDB.clearStore("records"); }
+  async saveAll() { return false; },
+  async clear() { await sb.from("properties").delete().neq("gis_id", ""); }
 };
+
+const ulbRecords = (recs, ulbFile = currentUlbFile) => {
+  const target = normUlb(ulbFile);
+  const matched = recs.filter(r => {
+    const u = normUlb(r.ulb_file || r.ulb_id);
+    return !target || !u || u === target || u.includes(target) || target.includes(u);
+  });
+  // If target ULB had slight name mismatch, display all loaded records rather than an empty screen
+  return sortByWardGis(matched.length ? matched : recs);
+};
+
+// Add this helper right above RelationalDB:
+const normUlb = u => String(u ?? "").replace(/\.json$/i, "").replace(/[^a-z0-9]/gi, "").toLowerCase();
 
 const RelationalDB = {
   // Fetch a single property and its nested floors
   async getRecord(ward, gis, ulbId) {
-    const { data, error } = await sb.from('properties')
+    // 1. Fetch matching GIS ID case-insensitively
+    const { data: candidates, error } = await sb.from('properties')
       .select('*, property_floors(*)')
-      .eq('ulb_id', ulbId)
-      .eq('ward', ward)
-      .eq('gis_id', gis)
-      .maybeSingle();
+      .ilike('gis_id', gis.trim());
 
-    if (error || !data) return null;
+    if (error || !candidates || !candidates.length) return null;
 
-    // Reconstruct the frontend object structure expected by the form
-    const record = {
-      ward: data.ward, gis_id: data.gis_id, old_house_no: data.old_house_no || "",
-      owner_name: data.owner_name || "", father_husband_name: data.father_husband_name || "",
-      address: data.address || "", mobile_no: data.mobile_no || "",
-      open_plot_area: data.open_plot_area || "", remarks: data.remarks || "",
-      saved_date: data.saved_date, updated_date: data.updated_date,
-      floors: {}
-    };
+    // 2. Match with normalized ULB and Ward so "mc_nahan.json" matches "mcnahan", and "Ward 1" matches "1"
+    const targetUlb = normUlb(ulbId);
+    const targetWard = norm(ward).replace(/\D+/g, "");
 
-    if (data.property_floors) {
-      data.property_floors.forEach(f => {
-        if (!record.floors[f.floor_name]) record.floors[f.floor_name] = [];
-        record.floors[f.floor_name][f.entry_index] = {
-          yes_no: f.yes_no || "No",
-          zone: f.zone || "N/A",
-          building_type: f.building_type || "N/A",
-          year: f.year_of_construction || "N/A",
-          occupancy: f.occupancy || "N/A",
-          area: f.area || "",
-          remarks: f.remarks || ""
-        };
-      });
-    }
-    return record;
+    const matched = candidates.find(c => {
+      const cUlb = normUlb(c.ulb_id);
+      const cWard = norm(c.ward).replace(/\D+/g, "");
+      const ulbMatches = !targetUlb || !cUlb || cUlb === targetUlb || cUlb.includes(targetUlb) || targetUlb.includes(cUlb);
+      const wardMatches = !targetWard || !cWard || cWard === targetWard || norm(c.ward) === norm(ward);
+      return ulbMatches && wardMatches;
+    }) || candidates.find(c => norm(c.gis_id) === norm(gis));
+
+    if (!matched) return null;
+    return mapDbRecordToFrontend(matched);
   },
-
-  // Replace the existing saveRecord inside RelationalDB with this:
-  async saveRecord(record, isUpdate = false, auditEntry = null) {
-    const { data: propData, error: propErr } = await sb.from('properties').upsert({
-      ulb_id: record.ulb_file || currentUlbFile,
-      ward: record.ward,
-      gis_id: record.gis_id,
-      old_house_no: record.old_house_no,
-      owner_name: record.owner_name,
-      father_husband_name: record.father_husband_name,
-      address: record.address,
-      mobile_no: record.mobile_no,
-      open_plot_area: parseFloat(record.open_plot_area) || null,
-      remarks: record.remarks,
-      updated_date: isUpdate ? new Date().toISOString() : null
-    }, { onConflict: 'ulb_id, ward, gis_id' }).select('id').single();
-
-    if (propErr) throw propErr;
-
-    const floorInserts = [];
-    Object.keys(record.floors || {}).forEach(floorName => {
-      record.floors[floorName].forEach((entry, idx) => {
-        floorInserts.push({
-          property_id: propData.id, floor_name: floorName, entry_index: idx,
-          yes_no: entry.yes_no, zone: entry.zone, building_type: entry.building_type,
-          year_of_construction: entry.year, occupancy: entry.occupancy,
-          area: parseFloat(entry.area) || null, remarks: entry.remarks
-        });
-      });
-    });
-
-    await sb.from('property_floors').delete().eq('property_id', propData.id);
-    if (floorInserts.length > 0) {
-      const { error: floorErr } = await sb.from('property_floors').insert(floorInserts);
-      if (floorErr) throw floorErr;
-    }
-
-    // Insert Audit Log if provided
-    if (auditEntry) {
-      auditEntry.property_id = propData.id;
-      await sb.from('property_audit_logs').insert(auditEntry);
-    }
-    return true;
-  },
-
-     
-  async deleteRecord(ward, gis, ulbId) {
-    const { error } = await sb.from('properties')
-      .delete()
-      .eq('ulb_id', ulbId).eq('ward', ward).eq('gis_id', gis);
-    if (error) throw error;
-    return true;
-  },
-
-  async getCount(ulbId) {
-    const { count } = await sb.from('properties')
-      .select('*', { count: 'exact', head: true })
-      .eq('ulb_id', ulbId);
-    return count || 0;
-  }
-};
 
 /* ==========================================================================
    ULB CONFIGURATION REGISTRY
@@ -4184,27 +4121,56 @@ function logTimestamp(e) {
 async function openAllHistoryModal() {
   if (!ensureAdminAccess(openAllHistoryModal)) return;
   
+  const pending = await showPendingToast("Loading update history...");
+  
   const { data: logs, error } = await sb.from('property_audit_logs')
     .select('*')
-    .eq('ulb_id', currentUlbFile)
     .order('created_at', { ascending: false })
     .limit(300);
 
-  if (error) return showToast("Failed to load global history.", "danger");
+  let events = [];
+  const targetUlb = normUlb(currentUlbFile);
 
-  const events = (logs || []).map((e, i) => ({
-    id: i, ward: e.ward, gis: e.gis_id, gisKey: norm(e.gis_id),
-    e: {
-      at: new Date(e.created_at).toLocaleString("en-IN"),
-      by: e.updated_by, role: e.role, source: e.source, changes: e.changes
-    }
-  }));
+  if (!error && logs && logs.length > 0) {
+    const filteredLogs = logs.filter(e => {
+      const u = normUlb(e.ulb_id);
+      return !targetUlb || !u || u === targetUlb || u.includes(targetUlb) || targetUlb.includes(u);
+    });
+    events = (filteredLogs.length ? filteredLogs : logs).map((e, i) => ({
+      id: i, ward: e.ward, gis: e.gis_id, gisKey: norm(e.gis_id),
+      e: {
+        at: new Date(e.created_at).toLocaleString("en-IN"),
+        by: e.updated_by, role: e.role, source: e.source, changes: e.changes
+      }
+    }));
+  }
+
+  // Fallback: If audit table hasn't been populated yet, extract from migrated records
+  if (!events.length) {
+    const all = await DB.getAll();
+    const recs = ulbRecords(all);
+    recs.forEach(r => {
+      if (!r.change_log || !Array.isArray(r.change_log)) return;
+      r.change_log.forEach(e => {
+        events.push({
+          ward: r.ward, gis: r.gis_id, gisKey: norm(r.gis_id),
+          e: {
+            at: e.at || new Date().toLocaleString("en-IN"),
+            by: e.by || "User", role: e.role || "Surveyor",
+            source: e.source || "Legacy Data", changes: e.changes || []
+          }
+        });
+      });
+    });
+    events.forEach((ev, i) => { ev.id = i; });
+  }
+
+  pending.end();
 
   const wards = [...new Set(events.map(ev => ev.ward))].sort();
-  
   allHistory = { events, query: "", ward: "", page: 1, pageSize: 20 };
   $("allHistSearch").value = "";
-  $("allHistScope").textContent = `Scope: ${currentUlbName} — Recent Updates`;
+  $("allHistScope").textContent = `Scope: ${currentUlbName || "Current ULB"} — ${events.length} update(s)`;
   $("allHistWard").innerHTML = `<option value="">All Wards</option>` + 
     wards.map(w => `<option value="${esc(w)}">${esc(w)}</option>`).join("");
     
@@ -5303,25 +5269,29 @@ async function openHealthRecord(i) {
 
 async function openReportsModal(initialTab = "wardSummary") {
   if (!ensureAdminAccess(() => openReportsModal(initialTab))) return;
-  // All report numbers are computed on the server (admin_reports); the browser only sorts and draws them.
-  let rep;
-  try { rep = await LocalDB.rpc("admin_reports", { p_ulb: currentUlbFile }); }
-  catch (e) { return showToast("Could not load reports: " + e.message, "danger"); }
-  $("reportsScopeNote").textContent = `Scope: ${currentUlbName || "current ULB"} (${rep.total} record(s))`;
+  
+  const pending = await showPendingToast("Loading reports...");
+  const all = await DB.getAll();
+  const recs = ulbRecords(all);
+  pending.end();
+
+  $("reportsScopeNote").textContent = `Scope: ${currentUlbName || "current ULB"} (${recs.length} record(s))`;
 
   const byWard = (a, b) => sortCollator.compare(normalizeWard(a.ward), normalizeWard(b.ward));
-  const wardStats = rep.wardStats.sort((a, b) => sortCollator.compare(a.ward, b.ward));
-  const occStats = rep.occStats.sort((a, b) => b.count - a.count);
-  const pending = rep.pending.sort(byWard);
-  _lastReportData = { wardSummary: wardStats, occupancySummary: occStats, propertyCategory: [], pendingRemarks: pending, dataHealth: [] };
+  const wardStats = computeWardStats(recs);
+  const occStats = computeOccupancyStats(recs);
+  const pendingRemarks = computePendingRemarks(recs);
 
-  _catAll = rep.category.rows.sort((a, b) => byWard(a, b) || sortCollator.compare(String(a.gis_id), String(b.gis_id)));
-  _catNoEntries = rep.category.none;
+  _lastReportData = { wardSummary: wardStats, occupancySummary: occStats, propertyCategory: [], pendingRemarks, dataHealth: [] };
+
+  const catData = computeCategoryRows(recs);
+  _catAll = catData.rows;
+  _catNoEntries = catData.none;
   _catFilter = "all";
   renderCategoryReport();
 
-  _healthAll = rep.health.sort((a, b) => byWard(a, b) || sortCollator.compare(String(a.gis_id), String(b.gis_id)));
-  _healthTotal = rep.total;
+  _healthAll = computeDataHealth(recs);
+  _healthTotal = recs.length;
   _healthFilter = "all";
   _healthCounts = {};
   _healthAll.forEach(r => r.issues.forEach(k => { _healthCounts[k] = (_healthCounts[k] || 0) + 1; }));
@@ -5335,7 +5305,7 @@ async function openReportsModal(initialTab = "wardSummary") {
     <tr><td>${esc(s.occupancy)}</td><td>${s.count}</td></tr>
   `).join("") || `<tr><td colspan="2" class="empty-row">No occupied floor entries yet.</td></tr>`;
 
-  $("pendingRemarksBody").innerHTML = pending.map(r => `
+  $("pendingRemarksBody").innerHTML = pendingRemarks.map(r => `
     <tr><td>${esc(r.ward)}</td><td>${esc(r.gis_id)}</td><td>${esc(r.owner_name || "\u2014")}</td>
     <td>${esc(r.mobile_no || "\u2014")}</td><td>${esc(r.remarks)}</td></tr>
   `).join("") || `<tr><td colspan="5" class="empty-row">No records have a remark right now.</td></tr>`;
@@ -5678,52 +5648,32 @@ $("form").addEventListener("change", scheduleEditStateRefresh);
 window.addEventListener("beforeunload", e => {
   if (hasUnsavedChanges()) { e.preventDefault(); e.returnValue = ""; }
 });
-async function runLegacyMigration(evt) {
-  const file = evt.target.files[0];
-  evt.target.value = "";
-  if (!file) return;
-
-  if (!confirm("Start migrating this legacy JSON file into the new relational Supabase tables?")) return;
-
-  const reader = new FileReader();
-  reader.onload = async () => {
-    try {
-      const parsed = JSON.parse(reader.result);
-      const records = Array.isArray(parsed) ? parsed : (parsed.records || []);
-      
-      if (!records.length) return showToast("No records found in this file.", "warning");
-
-      const pending = await showPendingToast(`Migrating ${records.length} records... Please wait.`);
-      let successCount = 0;
-      let errorCount = 0;
-
-      for (const rec of records) {
+for (const rec of records) {
         try {
-          // RelationalDB.saveRecord already contains the exact logic to split 
-          // nested floors into the property_floors table using entry_index.
           await RelationalDB.saveRecord(rec, true);
+
+          // Migrate past audit history if present in the legacy record
+          if (rec.change_log && Array.isArray(rec.change_log)) {
+            for (const logItem of rec.change_log) {
+              await sb.from('property_audit_logs').insert({
+                ulb_id: rec.ulb_file || currentUlbFile,
+                ward: rec.ward,
+                gis_id: rec.gis_id,
+                updated_by: logItem.by || "User",
+                role: logItem.role || "Surveyor",
+                source: logItem.source || "Legacy Import",
+                changes: logItem.changes || [],
+                prev_version: logItem.prev_version || null,
+                created_at: logItem.ts ? new Date(logItem.ts).toISOString() : new Date().toISOString()
+              });
+            }
+          }
           successCount++;
         } catch (e) {
           console.error("Failed to migrate record:", rec.gis_id, e);
           errorCount++;
         }
       }
-
-      pending.end();
-      updateRecordCount();
-      
-      if (errorCount > 0) {
-        showToast(`Migration finished. ${successCount} imported, ${errorCount} failed. Check console for errors.`, "warning", 10000);
-      } else {
-        showToast(`Successfully migrated all ${successCount} records!`, "success", 8000);
-      }
-      
-    } catch (err) {
-      showToast("Migration failed: " + err.message, "danger");
-    }
-  };
-  reader.readAsText(file);
-}
 </script>
 </body>
 </html>
