@@ -2161,6 +2161,39 @@ function handleModalSelectChange(val) {
   if (btn) { btn.classList.toggle("is-disabled", !val); btn.setAttribute("aria-disabled", val ? "false" : "true"); }
 }
 
+// Helper to reconstruct the nested frontend object from flat relational tables
+function mapDbRecordToFrontend(data) {
+  const record = {
+    ward: data.ward, gis_id: data.gis_id, old_house_no: data.old_house_no || "",
+    owner_name: data.owner_name || "", father_husband_name: data.father_husband_name || "",
+    address: data.address || "", mobile_no: data.mobile_no || "",
+    open_plot_area: data.open_plot_area || "", remarks: data.remarks || "",
+    saved_date: data.saved_date, updated_date: data.updated_date,
+    floors: {}
+  };
+
+  if (data.property_floors) {
+    data.property_floors.forEach(f => {
+      if (!record.floors[f.floor_name]) record.floors[f.floor_name] = [];
+      record.floors[f.floor_name][f.entry_index] = {
+        yes_no: f.yes_no || "No", zone: f.zone || "N/A", building_type: f.building_type || "N/A",
+        year: f.year_of_construction || "N/A", occupancy: f.occupancy || "N/A",
+        area: f.area || "", remarks: f.remarks || ""
+      };
+    });
+  }
+  return record;
+}
+
+// Update RelationalDB.getRecord to use the helper
+RelationalDB.getRecord = async function(ward, gis, ulbId) {
+  const { data, error } = await sb.from('properties')
+    .select('*, property_floors(*)')
+    .eq('ulb_id', ulbId).eq('ward', ward).eq('gis_id', gis).maybeSingle();
+  if (error || !data) return null;
+  return mapDbRecordToFrontend(data);
+};
+     
 /* ==========================================================================
    CLOUD STORAGE ENGINE (Supabase, server-side functions only)
    The browser never touches the records / recycle_bin tables. Every read and write is a
@@ -2262,8 +2295,8 @@ const RelationalDB = {
     return record;
   },
 
-  // Upsert the property and replace its associated floors
-  async saveRecord(record, isUpdate = false) {
+  // Replace the existing saveRecord inside RelationalDB with this:
+  async saveRecord(record, isUpdate = false, auditEntry = null) {
     const { data: propData, error: propErr } = await sb.from('properties').upsert({
       ulb_id: record.ulb_file || currentUlbFile,
       ward: record.ward,
@@ -2284,29 +2317,29 @@ const RelationalDB = {
     Object.keys(record.floors || {}).forEach(floorName => {
       record.floors[floorName].forEach((entry, idx) => {
         floorInserts.push({
-          property_id: propData.id,
-          floor_name: floorName,
-          entry_index: idx,
-          yes_no: entry.yes_no,
-          zone: entry.zone,
-          building_type: entry.building_type,
-          year_of_construction: entry.year,
-          occupancy: entry.occupancy,
-          area: parseFloat(entry.area) || null,
-          remarks: entry.remarks
+          property_id: propData.id, floor_name: floorName, entry_index: idx,
+          yes_no: entry.yes_no, zone: entry.zone, building_type: entry.building_type,
+          year_of_construction: entry.year, occupancy: entry.occupancy,
+          area: parseFloat(entry.area) || null, remarks: entry.remarks
         });
       });
     });
 
-    // Delete old floors and insert the new array
     await sb.from('property_floors').delete().eq('property_id', propData.id);
     if (floorInserts.length > 0) {
       const { error: floorErr } = await sb.from('property_floors').insert(floorInserts);
       if (floorErr) throw floorErr;
     }
+
+    // Insert Audit Log if provided
+    if (auditEntry) {
+      auditEntry.property_id = propData.id;
+      await sb.from('property_audit_logs').insert(auditEntry);
+    }
     return true;
   },
 
+     
   async deleteRecord(ward, gis, ulbId) {
     const { error } = await sb.from('properties')
       .delete()
@@ -3595,13 +3628,33 @@ async function persistImpl(mode, ctx = {}) {
       await RelationalDB.saveRecord(record, false);
       showToast(`Record saved successfully!`, "success", 3000, ctx.pending);
 
+    // Inside persistImpl, replace the `else` block (the update logic) with this:
     } else {
       if (editingIndex === -1) return showToast("Please load a record first.", "warning");
       if (hasIdentityChanged()) return showToast("Ward or GIS ID was changed. Please click 'View' to load a record.", "warning");
       if (!hasUnsavedChanges()) return showToast("No changes to update.", "info");
 
+      const existing = await RelationalDB.getRecord(ward, gis, currentUlbFile);
+      let auditEntry = null;
+      
+      if (existing) {
+        const changes = diffRecords(existing, record);
+        if (changes.length > 0) {
+          auditEntry = {
+            ulb_id: currentUlbFile,
+            ward: ward,
+            gis_id: gis,
+            updated_by: currentUserProfile?.email || "User",
+            role: isAdminLoggedIn() ? "Admin" : "Surveyor",
+            source: restoreSource || "Form",
+            changes: changes,
+            prev_version: existing
+          };
+        }
+      }
+
       ctx.pending = await showPendingToast("Updating record…");
-      await RelationalDB.saveRecord(record, true);
+      await RelationalDB.saveRecord(record, true, auditEntry);
       showToast(`Record updated successfully!`, "success", 3000, ctx.pending);
     }
 
@@ -3862,18 +3915,54 @@ function renderLogEntry(e, logIdx) {
     </div>`;
 }
 
+let currentRecordHistory = []; // Store temporarily for restores
+
 async function openHistoryModal() {
   if (editingIndex === -1) return showToast("Please load a saved record first.", "warning");
-  const recs = await DB.getAll();
-  const rec = recs[editingIndex];
-  if (!rec) return showToast("Record not found.", "danger");
-  $("historyTitle").textContent = `Change History \u2014 ${rec.ward} / GIS ID ${rec.gis_id}`;
-  const log = rec.change_log || [];
-  $("historyBody").innerHTML = log.length
-    ? `<p class="report-panel-note">You can restore the version from before any of the last ${VERSION_SNAPSHOT_LIMIT} updates. It loads into the form for review; press Update Record to apply it.</p>` +
-      log.map((e, i) => renderLogEntry(e, i)).reverse().join("")
-    : `<p class="report-panel-note">No changes recorded for this record yet. Updates made from now on will be listed here.</p>`;
+  
+  const ward = $("ward").value.trim();
+  const gis = $("gis_id").value.trim();
+  $("historyTitle").textContent = `Change History — ${ward} / GIS ID ${gis}`;
+  
+  const { data: logs, error } = await sb.from('property_audit_logs')
+    .select('*')
+    .eq('ulb_id', currentUlbFile).eq('ward', ward).eq('gis_id', gis)
+    .order('created_at', { ascending: false })
+    .limit(50);
+
+  if (error) return showToast("Failed to load history.", "danger");
+  
+  currentRecordHistory = logs || [];
+
+  $("historyBody").innerHTML = currentRecordHistory.length
+    ? `<p class="report-panel-note">You can restore previous versions below.</p>` +
+      currentRecordHistory.map((e, i) => {
+        // Map DB structure to match existing renderLogEntry format
+        const formattedEvent = {
+          at: new Date(e.created_at).toLocaleString("en-IN"),
+          by: e.updated_by, role: e.role, source: e.source,
+          changes: e.changes, prev_version: e.prev_version
+        };
+        return renderLogEntry(formattedEvent, i);
+      }).join("")
+    : `<p class="report-panel-note">No changes recorded yet.</p>`;
+    
   $("historyModal").style.display = "flex";
+}
+
+async function restorePreviousVersion(logIdx) {
+  const entry = currentRecordHistory[logIdx];
+  if (!entry?.prev_version) return showToast("No saved copy exists for that update.", "warning");
+  if (hasUnsavedChanges() && !confirm("The form has unsaved edits. Loading the earlier version will replace them. Continue?")) return;
+
+  closeHistoryModal();
+  const existing = await RelationalDB.getRecord(entry.ward, entry.gis_id, currentUlbFile);
+  fillForm(existing); 
+  setEditBaseline();
+  fillForm(entry.prev_version);
+  restoreSource = "Restored earlier version";
+  refreshEditState();
+  showToast(`Loaded version from before ${new Date(entry.created_at).toLocaleString("en-IN")}. Press Update to apply.`, "info", 8000);
 }
 function closeHistoryModal() { $("historyModal").style.display = "none"; }
 
@@ -4039,31 +4128,33 @@ function logTimestamp(e) {
   return parseTimestamp(e.at);
 }
 
-async function openAllHistoryModal() {
+async function openAllHistoryModal() {async function openAllHistoryModal() {
   if (!ensureAdminAccess(openAllHistoryModal)) return;
-  const all = await DB.getAll();
-  const events = [], wards = new Set();
-  let records = 0;
+  
+  const { data: logs, error } = await sb.from('property_audit_logs')
+    .select('*')
+    .eq('ulb_id', currentUlbFile)
+    .order('created_at', { ascending: false })
+    .limit(300);
 
-  all.forEach(r => {
-    if (recordUlbFile(r) !== currentUlbFile || !r.change_log?.length) return;
-    records++;
-    const ward = normalizeWard(r.ward);
-    if (ward) wards.add(ward);
-    r.change_log.forEach(e => {
-      events.push({ ward, gis: r.gis_id, e, ts: logTimestamp(e), gisKey: norm(r.gis_id) });
-    });
-  });
-  events.sort((a, b) => b.ts - a.ts);
-  events.forEach((ev, i) => { ev.id = i; });
+  if (error) return showToast("Failed to load global history.", "danger");
 
+  const events = (logs || []).map((e, i) => ({
+    id: i, ward: e.ward, gis: e.gis_id, gisKey: norm(e.gis_id),
+    e: {
+      at: new Date(e.created_at).toLocaleString("en-IN"),
+      by: e.updated_by, role: e.role, source: e.source, changes: e.changes
+    }
+  }));
+
+  const wards = [...new Set(events.map(ev => ev.ward))].sort();
+  
   allHistory = { events, query: "", ward: "", page: 1, pageSize: 20 };
   $("allHistSearch").value = "";
-  $("allHistScope").textContent =
-    `Scope: ${currentUlbName || "current ULB"} \u2014 ${events.length} update(s) across ${records} record(s)`;
-  $("allHistWard").innerHTML = `<option value="">All Wards</option>` +
-    [...wards].sort((a, b) => sortCollator.compare(a, b))
-      .map(w => `<option value="${escHtml(w)}">${escHtml(w)}</option>`).join("");
+  $("allHistScope").textContent = `Scope: ${currentUlbName} — Recent Updates`;
+  $("allHistWard").innerHTML = `<option value="">All Wards</option>` + 
+    wards.map(w => `<option value="${esc(w)}">${esc(w)}</option>`).join("");
+    
   renderAllHistory();
   $("allHistoryModal").style.display = "flex";
 }
