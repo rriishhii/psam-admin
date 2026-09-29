@@ -2287,21 +2287,33 @@ const DB = {
   async clear() { await sb.from("properties").delete().neq("gis_id", ""); }
 };
 
-const ulbRecords = (recs, ulbFile = currentUlbFile) => {
-  const target = normUlb(ulbFile);
-  const matched = recs.filter(r => {
-    const u = normUlb(r.ulb_file || r.ulb_id);
-    return !target || !u || u === target || u.includes(target) || target.includes(u);
-  });
-  // If target ULB had slight name mismatch, display all loaded records rather than an empty screen
-  return sortByWardGis(matched.length ? matched : recs);
-};
-
-// Add this helper right above RelationalDB:
+// Helper to normalize ULB names for matching legacy JSON names
 const normUlb = u => String(u ?? "").replace(/\.json$/i, "").replace(/[^a-z0-9]/gi, "").toLowerCase();
 
+// Helper to map DB rows back to the frontend object structure
+function mapDbRecordToFrontend(data) {
+  const record = {
+    ward: data.ward, gis_id: data.gis_id, old_house_no: data.old_house_no || "",
+    owner_name: data.owner_name || "", father_husband_name: data.father_husband_name || "",
+    address: data.address || "", mobile_no: data.mobile_no || "",
+    open_plot_area: data.open_plot_area || "", remarks: data.remarks || "",
+    saved_date: data.saved_date, updated_date: data.updated_date,
+    floors: {}
+  };
+  if (data.property_floors) {
+    data.property_floors.forEach(f => {
+      if (!record.floors[f.floor_name]) record.floors[f.floor_name] = [];
+      record.floors[f.floor_name][f.entry_index] = {
+        yes_no: f.yes_no || "No", zone: f.zone || "N/A", building_type: f.building_type || "N/A",
+        year: f.year_of_construction || "N/A", occupancy: f.occupancy || "N/A",
+        area: f.area || "", remarks: f.remarks || ""
+      };
+    });
+  }
+  return record;
+}
+
 const RelationalDB = {
-  // Fetch a single property and its nested floors
   async getRecord(ward, gis, ulbId) {
     // 1. Fetch matching GIS ID case-insensitively
     const { data: candidates, error } = await sb.from('properties')
@@ -2326,6 +2338,60 @@ const RelationalDB = {
     return mapDbRecordToFrontend(matched);
   },
 
+  async saveRecord(record, isUpdate = false, auditEntry = null) {
+    const { data: propData, error: propErr } = await sb.from('properties').upsert({
+      ulb_id: record.ulb_file || currentUlbFile,
+      ward: record.ward,
+      gis_id: record.gis_id,
+      old_house_no: record.old_house_no,
+      owner_name: record.owner_name,
+      father_husband_name: record.father_husband_name,
+      address: record.address,
+      mobile_no: record.mobile_no,
+      open_plot_area: parseFloat(record.open_plot_area) || null,
+      remarks: record.remarks,
+      updated_date: isUpdate ? new Date().toISOString() : null
+    }, { onConflict: 'ulb_id, ward, gis_id' }).select('id').single();
+
+    if (propErr) throw propErr;
+
+    const floorInserts = [];
+    Object.keys(record.floors || {}).forEach(floorName => {
+      record.floors[floorName].forEach((entry, idx) => {
+        floorInserts.push({
+          property_id: propData.id, floor_name: floorName, entry_index: idx,
+          yes_no: entry.yes_no, zone: entry.zone, building_type: entry.building_type,
+          year_of_construction: entry.year, occupancy: entry.occupancy,
+          area: parseFloat(entry.area) || null, remarks: entry.remarks
+        });
+      });
+    });
+
+    await sb.from('property_floors').delete().eq('property_id', propData.id);
+    if (floorInserts.length > 0) {
+      const { error: floorErr } = await sb.from('property_floors').insert(floorInserts);
+      if (floorErr) throw floorErr;
+    }
+
+    if (auditEntry) {
+      auditEntry.property_id = propData.id;
+      await sb.from('property_audit_logs').insert(auditEntry);
+    }
+    return true;
+  },
+
+  async deleteRecord(ward, gis, ulbId) {
+    const { error } = await sb.from('properties').delete().eq('ulb_id', ulbId).eq('ward', ward).eq('gis_id', gis);
+    if (error) throw error;
+    return true;
+  },
+
+  async getCount(ulbId) {
+    const { count, error } = await sb.from('properties').select('*', { count: 'exact', head: true }).eq('ulb_id', ulbId);
+    if (error) throw error;
+    return count || 0;
+  }
+};
 /* ==========================================================================
    ULB CONFIGURATION REGISTRY
 ========================================================================== */
