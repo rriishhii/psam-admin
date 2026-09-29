@@ -4525,7 +4525,7 @@ const Draft = {
       if (d.ulb_file && d.ulb_file !== currentUlbFile && ULB_REGISTRY[d.ulb_file]) switchUlb(d.ulb_file, true);
       let loaded = false, missing = false;
       if (d.mode === "edit" && d.edit_ref) {
-        if (!isAdminLoggedIn()) { try { await DB.fetchOne(d.edit_ref.ward, d.edit_ref.gis_id, d.ulb_file || currentUlbFile); } catch (_) {} }
+        if (!isAdminLoggedIn()) { try { await RelationalDB.getRecord(d.edit_ref.ward, d.edit_ref.gis_id, d.ulb_file || currentUlbFile); } catch (_) {} }
         const recs = await DB.getAll();
         const idx = findIndex(recs, d.edit_ref.ward, d.edit_ref.gis_id, d.ulb_file || currentUlbFile);
         if (idx !== -1) loaded = await loadRecordByIndex(idx, recs);
@@ -4848,7 +4848,14 @@ async function runDatabaseImport(db, fileName) {
 /* Storage check: tells the person when the browser blocks storage for this page altogether. */
 async function checkStorageHealth() {
   let ok = true;
-  try { await DB.open(); } catch (_) { ok = false; }
+  try { 
+    // Check if the Supabase session is active directly
+    await LocalDB.open(); 
+  } catch (err) { 
+    console.error("Storage health check failed:", err);
+    ok = false; 
+  }
+  
   const banner = $("storageProblemBanner");
   if (banner) banner.style.display = ok ? "none" : "flex";
   return ok;
