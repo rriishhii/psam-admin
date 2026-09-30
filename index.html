@@ -4326,17 +4326,25 @@ async function persist(mode){
 async function clearAllData() {
   if (!ensureAdminAccess(clearAllData)) return;
   if (!isEngineLoaded) return showToast("ULB configuration is unavailable. Action disabled.", "danger");
+  
   const recs = await DB.getAll();
   if (!recs.length) return showToast("No records saved to clear.", "warning");
 
-  if (!confirm(`Delete all ${recs.length} records? This cannot be undone.`)) return;
+  // Simplified prompt removing the broken export requirement
+  if (!confirm(`Delete all ${recs.length} records? This cannot be undone. The Recycle Bin will be emptied too.`)) return;
 
   try {
-    await DB.clear();
-    await Trash.clear();
+    const pending = await showPendingToast("Deleting all records...");
+    
+    // Drops records from the Supabase 'properties' table
+    await DB.clear(); 
+    
+    // Drops records from the Supabase 'recycle_bin' table
+    await Trash.clear(); 
+    
     resetFormMode();
     updateRecordCount();
-    showToast(`All ${recs.length} records cleared.`, "danger");
+    showToast(`All ${recs.length} records have been permanently deleted.`, "danger", 4000, pending);
   } catch (err) {
     showToast("Failed to clear data: " + err.message, "danger");
   }
