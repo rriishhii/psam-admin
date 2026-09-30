@@ -2264,7 +2264,6 @@ const LocalDB = {
 const DB = {
   async getAll() {
     let out = [];
-    // Read directly from the relational tables in chunks of 1000
     for (let from = 0; ; from += 1000) {
       const { data, error } = await sb.from("properties")
         .select("*, property_floors(*)")
@@ -2284,7 +2283,20 @@ const DB = {
     }
     return out;
   },
-  async saveAll() { return false; },
+  async saveAll(recs) { 
+    if (!recs || !recs.length) return true;
+    try {
+      // Route batch saves through the working RelationalDB function
+      for (const record of recs) {
+        await RelationalDB.saveRecord(record, !!record.updated_date);
+      }
+      return true;
+    } catch (err) {
+      console.error("DB.saveAll failed:", err);
+      showToast("Batch save failed: " + err.message, "danger");
+      return false;
+    }
+  },
   async clear() { await sb.from("properties").delete().neq("gis_id", ""); }
 };
 
@@ -4317,14 +4329,17 @@ async function clearAllData() {
   const recs = await DB.getAll();
   if (!recs.length) return showToast("No records saved to clear.", "warning");
 
-  if (!confirm(`Delete all ${recs.length} records? This cannot be undone.\n\nThe database is exported first as a safety copy. If that export is cancelled or fails, nothing is deleted. The Recycle Bin will be emptied too.`)) return;
+  if (!confirm(`Delete all ${recs.length} records? This cannot be undone.`)) return;
 
-  if (!await performDatabaseExport()) return showToast("Nothing was deleted, because the database export was not saved.", "warning", 6000);
-  await DB.clear();
-  await Trash.clear();
-  resetFormMode();
-  updateRecordCount();
-  showToast(`All ${recs.length} records cleared (database exported first).`, "danger");
+  try {
+    await DB.clear();
+    await Trash.clear();
+    resetFormMode();
+    updateRecordCount();
+    showToast(`All ${recs.length} records cleared.`, "danger");
+  } catch (err) {
+    showToast("Failed to clear data: " + err.message, "danger");
+  }
 }
 
 /* ==========================================================================
@@ -5677,7 +5692,7 @@ document.addEventListener("keydown", e => {
   }
   if (e.key === "Escape") {
     [["ownerCopyModal", closeOwnerCopyModal], ["allHistoryModal", closeAllHistoryModal], ["historyModal", closeHistoryModal], ["recordsModal", closeRecordsModal],
-     ["reportsModal", closeReportsModal], ["binModal", closeBinModal], ["aboutModal", closeAboutModal], ["updatedExportModal", closeUpdatedExportModal]]
+     ["reportsModal", closeReportsModal], ["binModal", closeBinModal], ["aboutModal", closeAboutModal]]
       .forEach(([id, close]) => { if ($(id)?.style.display === "flex") close(); });
     return;
   }
